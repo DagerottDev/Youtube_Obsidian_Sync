@@ -1,0 +1,9 @@
+node_modules/
+*.log
+.DS_Store
+
+# Never push these:
+# - AGENTS.md contains personal/private instructions (vault paths etc.)
+# - .freebuff/ is the Freebuff desktop app's local database
+AGENTS.md
+.freebuff/

@@ -1,0 +1,25 @@
+{
+  "name": "youtube-playlist-sync",
+  "version": "0.1.0",
+  "description": "Automatically sync public YouTube playlists into Obsidian notes with full metadata and transcripts.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "typecheck": "tsc --noEmit --skipLibCheck"
+  },
+  "keywords": [
+    "obsidian",
+    "youtube",
+    "playlist",
+    "sync",
+    "transcript"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.21.5",
+    "obsidian": "latest",
+    "typescript": "^5.5.4"
+  }
+}
