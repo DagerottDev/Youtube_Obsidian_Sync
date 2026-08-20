@@ -103,6 +103,8 @@ Notes), note rendering in `src/noteRenderer.ts`, sync orchestration in `src/main
 
 If this plugin saves you time, you can support its development:
 
+[![Support the project — Buy Me a Coffee](https://raw.githubusercontent.com/DagerottDev/Youtube_Obsidian_Sync/main/assets/buy-me-a-coffee.svg)](https://buymeacoffee.com/dagerottdev)
+
 - [Buy Me a Coffee — international support](https://buymeacoffee.com/dagerottdev)
 - [Bondin — India support](https://bondin.io/dagerottdev)
 
