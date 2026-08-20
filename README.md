@@ -103,8 +103,8 @@ Notes), note rendering in `src/noteRenderer.ts`, sync orchestration in `src/main
 
 If this plugin saves you time, you can support its development:
 
-- [Buy me a coffee](https://buymeacoffee.com/dagerottdev)
-- [Visit my Bondin profile](https://bondin.io/dagerottdev)
+- [Buy Me a Coffee — international support](https://buymeacoffee.com/dagerottdev)
+- [Bondin — India support](https://bondin.io/dagerottdev)
 
 ## License
 
