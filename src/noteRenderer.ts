@@ -150,10 +150,10 @@ export function buildVideoNote(
   parts.push('');
 
   if (settings.mediaEmbed === 'video') {
-    parts.push(`![${meta.title.replace(/[\[\]]/g, '')}](${meta.url})`);
+    parts.push(`![${meta.title.replace(/[[\]]/g, '')}](${meta.url})`);
     parts.push('');
   } else if (settings.mediaEmbed === 'thumbnail' && meta.thumbnailUrl) {
-    parts.push(`![${meta.title.replace(/[\[\]]/g, '')}](${meta.thumbnailUrl})`);
+    parts.push(`![${meta.title.replace(/[[\]]/g, '')}](${meta.thumbnailUrl})`);
     parts.push('');
   }
 

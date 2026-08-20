@@ -1,5 +1,7 @@
-import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from 'obsidian';
 import type YouTubePlaylistSyncPlugin from './main';
+
+const PLAYLIST_URL_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
 
 export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
   plugin: YouTubePlaylistSyncPlugin;
@@ -7,6 +9,146 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
   constructor(app: App, plugin: YouTubePlaylistSyncPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  // Obsidian 1.13+ renders these definitions and indexes them for settings search.
+  // display() below remains as the compatibility path for older Obsidian versions.
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        type: 'group',
+        heading: 'Playlists',
+        items: [
+          {
+            name: 'Configured playlists',
+            desc: 'Public YouTube playlist URLs to sync. Only new videos are turned into notes; existing notes are never modified.',
+            render: (setting) => this.renderPlaylistList(setting),
+          },
+          {
+            name: 'Add playlist',
+            desc: 'Paste a YouTube playlist URL, e.g. https://www.youtube.com/playlist?list=PL...',
+            render: (setting) => {
+              let inputEl: HTMLInputElement;
+              new Setting(setting.controlEl)
+                .addText((text) => {
+                  inputEl = text.inputEl;
+                  text.setPlaceholder('https://www.youtube.com/playlist?list=...');
+                })
+                .addButton((button) =>
+                  button.setButtonText('Add').setCta().onClick(async () => {
+                    if (await this.addPlaylist(inputEl.value)) {
+                      inputEl.value = '';
+                      this.update();
+                    }
+                  }),
+                );
+            },
+          },
+        ],
+      },
+      {
+        type: 'group',
+        heading: 'Sync',
+        items: [
+          {
+            name: 'Sync when the app opens',
+            desc: 'Automatically sync all playlists shortly after the app starts.',
+            control: { type: 'toggle', key: 'syncOnStartup' },
+          },
+          {
+            name: 'Sync interval (minutes)',
+            desc: 'Re-sync every N minutes while the app is open. Set to 0 to disable the timer.',
+            control: { type: 'number', key: 'syncIntervalMinutes', min: 0, step: 1 },
+          },
+          {
+            name: 'Sync now',
+            action: () => {
+              void this.plugin.syncAll();
+            },
+          },
+        ],
+      },
+      {
+        type: 'group',
+        heading: 'Note output',
+        items: [
+          {
+            name: 'Base folder',
+            desc: 'Folder inside the vault where playlists are written (one subfolder per playlist).',
+            control: { type: 'text', key: 'baseFolder', placeholder: 'YouTube' },
+          },
+          {
+            name: 'Create index notes',
+            desc: 'Maintain an index note per playlist (table of videos) plus a root index.',
+            control: { type: 'toggle', key: 'createIndexNote' },
+          },
+          {
+            name: 'Transcript format',
+            control: {
+              type: 'dropdown',
+              key: 'transcriptMode',
+              options: { readable: 'Readable paragraphs', timestamped: 'Timestamped lines' },
+            },
+          },
+          {
+            name: 'Preferred caption language',
+            desc: 'Language code such as "en". Leave empty to use the first available transcript.',
+            control: { type: 'text', key: 'preferredLanguage', placeholder: 'en' },
+          },
+          {
+            name: 'Media embed',
+            control: {
+              type: 'dropdown',
+              key: 'mediaEmbed',
+              options: { video: 'YouTube video embed', thumbnail: 'Thumbnail image', off: 'None' },
+            },
+          },
+          {
+            name: 'Tags',
+            desc: 'Extra tags added to every generated note (space or comma separated).',
+            control: { type: 'text', key: 'extraTags' },
+          },
+        ],
+      },
+    ];
+  }
+
+  private renderPlaylistList(setting: Setting): void {
+    const listEl = setting.controlEl.createDiv();
+    if (!this.plugin.settings.playlists.length) {
+      listEl.createEl('p', { text: 'No playlists configured yet.', cls: 'setting-item-description' });
+    }
+    this.plugin.settings.playlists.forEach((playlist, index) => {
+      new Setting(listEl)
+        .setName(playlist.url)
+        .addButton((button) =>
+          button.setButtonText('Remove').onClick(async () => {
+            await this.removePlaylist(index);
+            this.update();
+          }),
+        );
+    });
+  }
+
+  private async addPlaylist(url: string): Promise<boolean> {
+    const normalized = url.trim();
+    if (!normalized) return false;
+    if (!PLAYLIST_URL_REGEX.test(normalized)) {
+      new Notice('That does not look like a YouTube playlist URL.');
+      return false;
+    }
+    if (this.plugin.settings.playlists.some((playlist) => playlist.url === normalized)) {
+      new Notice('That playlist is already configured.');
+      return false;
+    }
+    this.plugin.settings.playlists.push({ url: normalized });
+    await this.plugin.saveSettings();
+    return true;
+  }
+
+  private async removePlaylist(index: number): Promise<void> {
+    this.plugin.settings.playlists.splice(index, 1);
+    await this.plugin.saveSettings();
   }
 
   display(): void {
@@ -27,9 +169,8 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
         new Setting(listEl)
           .setName(playlist.url)
           .addButton((button) =>
-            button.setButtonText('Remove').setWarning().onClick(async () => {
-              this.plugin.settings.playlists.splice(index, 1);
-              await this.plugin.saveSettings();
+            button.setButtonText('Remove').onClick(async () => {
+              await this.removePlaylist(index);
               renderList();
             }),
           );
@@ -50,18 +191,10 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
         button.setButtonText('Add').setCta().onClick(async () => {
           const url = inputEl.value.trim();
           if (!url) return;
-          if (!/(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/.test(url)) {
-            new Notice('That does not look like a YouTube playlist URL.');
-            return;
+          if (await this.addPlaylist(url)) {
+            inputEl.value = '';
+            renderList();
           }
-          if (this.plugin.settings.playlists.some((p) => p.url === url)) {
-            new Notice('That playlist is already configured.');
-            return;
-          }
-          this.plugin.settings.playlists.push({ url });
-          await this.plugin.saveSettings();
-          inputEl.value = '';
-          renderList();
         }),
       );
 

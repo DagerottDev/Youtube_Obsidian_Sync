@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile, normalizePath } from 'obsidian';
+import { Notice, Plugin, TFile, TFolder, normalizePath } from 'obsidian';
 import {
   DEFAULT_SETTINGS,
   type PlaylistSyncResult,
@@ -23,6 +23,47 @@ import { YouTubePlaylistSyncSettingTab } from './settings';
 const PLAYLIST_ID_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
 const VIDEO_ID_FRONTMATTER_REGEX = /^videoId:\s*"?([^"\s]+)"?/m;
 const SOURCE_FRONTMATTER_REGEX = /^source:\s*youtube\b/m;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isPlaylist(value: unknown): value is { url: string } {
+  return isRecord(value) && typeof value.url === 'string';
+}
+
+function normalizeSettings(value: unknown): YouTubePlaylistSyncSettings {
+  const stored = isRecord(value) ? value : {};
+  const playlists = Array.isArray(stored.playlists)
+    ? stored.playlists.filter(isPlaylist).map((playlist) => ({ url: playlist.url }))
+    : [];
+
+  return {
+    playlists,
+    syncOnStartup: typeof stored.syncOnStartup === 'boolean'
+      ? stored.syncOnStartup
+      : DEFAULT_SETTINGS.syncOnStartup,
+    syncIntervalMinutes: typeof stored.syncIntervalMinutes === 'number'
+      && Number.isFinite(stored.syncIntervalMinutes)
+      && stored.syncIntervalMinutes >= 0
+      ? Math.floor(stored.syncIntervalMinutes)
+      : DEFAULT_SETTINGS.syncIntervalMinutes,
+    baseFolder: typeof stored.baseFolder === 'string' && stored.baseFolder.trim()
+      ? stored.baseFolder
+      : DEFAULT_SETTINGS.baseFolder,
+    createIndexNote: typeof stored.createIndexNote === 'boolean'
+      ? stored.createIndexNote
+      : DEFAULT_SETTINGS.createIndexNote,
+    transcriptMode: stored.transcriptMode === 'timestamped' ? 'timestamped' : 'readable',
+    preferredLanguage: typeof stored.preferredLanguage === 'string'
+      ? stored.preferredLanguage
+      : DEFAULT_SETTINGS.preferredLanguage,
+    extraTags: typeof stored.extraTags === 'string' ? stored.extraTags : DEFAULT_SETTINGS.extraTags,
+    mediaEmbed: stored.mediaEmbed === 'thumbnail' || stored.mediaEmbed === 'off'
+      ? stored.mediaEmbed
+      : 'video',
+  };
+}
 
 export default class YouTubePlaylistSyncPlugin extends Plugin {
   settings: YouTubePlaylistSyncSettings = DEFAULT_SETTINGS;
@@ -70,7 +111,8 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const stored: unknown = await this.loadData();
+    this.settings = normalizeSettings(stored);
   }
 
   async saveSettings(): Promise<void> {
@@ -117,7 +159,7 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
           });
         }
       }
-      this.writeRootIndex(results);
+      await this.writeRootIndex(results);
       this.lastSyncAt = Date.now();
 
       const created = results.reduce((sum, r) => sum + r.created, 0);
@@ -137,10 +179,8 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     const playlistId = this.getPlaylistId(url);
     if (!playlistId) throw new Error(`Could not parse playlist ID from: ${url}`);
 
-    console.log(`YouTube Sync: fetching playlist ${url}`);
     const { entries, title } = await fetchPlaylist(playlistId);
     const name = title ?? `Playlist ${playlistId}`;
-    console.log(`YouTube Sync: "${name}" has ${entries.length} videos`);
 
     const folder = normalizePath(`${this.settings.baseFolder}/${sanitizeNoteFileName(name) || playlistId}`);
     await this.ensureFolder(folder);
@@ -175,7 +215,7 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
         console.error(`YouTube Sync: failed for "${entry.title}"`, error);
       }
       // Be gentle with YouTube between per-video requests.
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
     }
 
     if (this.settings.createIndexNote) {
@@ -183,7 +223,6 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       await this.overwriteFile(`${folder}/_Index.md`, index);
     }
 
-    console.log(`YouTube Sync: "${name}" → ${created} created, ${skipped} existing, ${failed} failed`);
     return { name, playlistId, total: entries.length, created, skipped, failed, folder };
   }
 
@@ -202,12 +241,13 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
 
   private async scanSyncedVideoIds(folder: string): Promise<Set<string>> {
     const synced = new Set<string>();
-    const files = this.app.vault.getFiles().filter(
-      (file) => file.path.startsWith(`${folder}/`) && file.extension === 'md',
-    );
-    for (const file of files) {
+    const folderFile = this.app.vault.getAbstractFileByPath(folder);
+    if (!(folderFile instanceof TFolder)) return synced;
+
+    for (const child of folderFile.children) {
+      if (!(child instanceof TFile) || child.extension !== 'md') continue;
       try {
-        const content = await this.app.vault.cachedRead(file);
+        const content = await this.app.vault.cachedRead(child);
         const head = content.slice(0, 4000);
         const idMatch = head.match(VIDEO_ID_FRONTMATTER_REGEX);
         if (idMatch && SOURCE_FRONTMATTER_REGEX.test(head)) {
