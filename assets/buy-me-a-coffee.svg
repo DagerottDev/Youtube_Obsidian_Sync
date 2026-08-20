@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="190" viewBox="0 0 760 190" role="img" aria-labelledby="title desc">
+  <title id="title">Buy Me a Coffee</title>
+  <desc id="desc">A clickable animated banner inviting international supporters to buy the YouTube Playlist Sync developer a coffee.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#211537" />
+      <stop offset="0.5" stop-color="#51245f">
+        <animate attributeName="stop-color" values="#51245f;#7a315f;#51245f" dur="7s" repeatCount="indefinite" />
+      </stop>
+      <stop offset="1" stop-color="#e07a5f" />
+    </linearGradient>
+    <linearGradient id="button" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffd166" />
+      <stop offset="1" stop-color="#f4a261" />
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#ffd166" stop-opacity="0.4" />
+      <stop offset="1" stop-color="#ffd166" stop-opacity="0" />
+    </radialGradient>
+    <style>
+      .float { animation: float 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+      .steam { animation: steam 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+      .steam-two { animation-delay: 0.7s; }
+      .pulse { animation: pulse 2.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+      @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+      @keyframes steam { 0%, 100% { opacity: 0.2; transform: translateY(3px); } 50% { opacity: 0.9; transform: translateY(-5px); } }
+      @keyframes pulse { 0%, 100% { opacity: 0.35; transform: scale(0.92); } 50% { opacity: 0.75; transform: scale(1.08); } }
+      @media (prefers-reduced-motion: reduce) {
+        .float, .steam, .pulse { animation: none; }
+      }
+    </style>
+  </defs>
+
+  <rect x="5" y="5" width="750" height="180" rx="28" fill="url(#background)" />
+  <circle cx="650" cy="44" r="88" fill="url(#glow)" class="pulse" />
+  <circle cx="690" cy="146" r="3" fill="#fff" opacity="0.7" />
+  <circle cx="620" cy="32" r="2" fill="#fff" opacity="0.55" />
+  <path d="M588 30l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#ffd166" opacity="0.9" />
+  <path d="M700 92l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" fill="#fff" opacity="0.7" />
+
+  <g class="float">
+    <path d="M77 91h91v39c0 19-15 34-34 34h-23c-19 0-34-15-34-34z" fill="#fff8ed" />
+    <path d="M168 101h13c17 0 30 13 30 29s-13 29-30 29h-17v-12h17c10 0 18-8 18-17s-8-17-18-17h-13z" fill="#fff8ed" />
+    <path d="M84 91h77v13H84z" fill="#e07a5f" />
+    <path d="M99 65c-5-10 6-13 1-24M126 65c-5-10 6-13 1-24" fill="none" stroke="#fff8ed" stroke-width="5" stroke-linecap="round" class="steam" />
+    <path d="M126 65c-5-10 6-13 1-24" fill="none" stroke="#fff8ed" stroke-width="5" stroke-linecap="round" class="steam steam-two" />
+    <path d="M101 139h47" stroke="#e07a5f" stroke-width="5" stroke-linecap="round" opacity="0.45" />
+  </g>
+
+  <text x="244" y="68" fill="#fff" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="31" font-weight="700">Buy Me a Coffee</text>
+  <text x="245" y="96" fill="#f9e9df" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="16">Support independent plugin development</text>
+  <rect x="244" y="119" width="222" height="38" rx="19" fill="url(#button)" />
+  <text x="267" y="144" fill="#211537" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="16" font-weight="700">Support the project</text>
+  <path d="M443 138h11m-5-5 5 5-5 5" fill="none" stroke="#211537" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <text x="595" y="169" fill="#f9e9df" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" text-anchor="middle" opacity="0.85">international support</text>
+</svg>
