@@ -38,7 +38,7 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
                   button.setButtonText('Add').setCta().onClick(async () => {
                     if (await this.addPlaylist(inputEl.value)) {
                       inputEl.value = '';
-                      this.update();
+                      this.refreshDeclarativeSettings();
                     }
                   }),
                 );
@@ -124,7 +124,7 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
         .addButton((button) =>
           button.setButtonText('Remove').onClick(async () => {
             await this.removePlaylist(index);
-            this.update();
+            this.refreshDeclarativeSettings();
           }),
         );
     });
@@ -149,6 +149,11 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
   private async removePlaylist(index: number): Promise<void> {
     this.plugin.settings.playlists.splice(index, 1);
     await this.plugin.saveSettings();
+  }
+
+  private refreshDeclarativeSettings(): void {
+    const update = (this as unknown as Record<string, unknown>)['update'];
+    if (typeof update === 'function') Reflect.apply(update, this, []);
   }
 
   display(): void {
