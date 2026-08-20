@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from 'obsidian';
+import { App, Notice, PluginSettingTab, SecretComponent, Setting } from 'obsidian';
 import type YouTubePlaylistSyncPlugin from './main';
 
 const PLAYLIST_URL_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
@@ -9,125 +9,6 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
   constructor(app: App, plugin: YouTubePlaylistSyncPlugin) {
     super(app, plugin);
     this.plugin = plugin;
-  }
-
-  // Obsidian 1.13+ renders these definitions and indexes them for settings search.
-  // display() below remains as the compatibility path for older Obsidian versions.
-  getSettingDefinitions(): SettingDefinitionItem[] {
-    return [
-      {
-        type: 'group',
-        heading: 'Playlists',
-        items: [
-          {
-            name: 'Configured playlists',
-            desc: 'Public YouTube playlist URLs to sync. Only new videos are turned into notes; existing notes are never modified.',
-            render: (setting) => this.renderPlaylistList(setting),
-          },
-          {
-            name: 'Add playlist',
-            desc: 'Paste a YouTube playlist URL, e.g. https://www.youtube.com/playlist?list=PL...',
-            render: (setting) => {
-              let inputEl: HTMLInputElement;
-              new Setting(setting.controlEl)
-                .addText((text) => {
-                  inputEl = text.inputEl;
-                  text.setPlaceholder('https://www.youtube.com/playlist?list=...');
-                })
-                .addButton((button) =>
-                  button.setButtonText('Add').setCta().onClick(async () => {
-                    if (await this.addPlaylist(inputEl.value)) {
-                      inputEl.value = '';
-                      this.refreshDeclarativeSettings();
-                    }
-                  }),
-                );
-            },
-          },
-        ],
-      },
-      {
-        type: 'group',
-        heading: 'Sync',
-        items: [
-          {
-            name: 'Sync when the app opens',
-            desc: 'Automatically sync all playlists shortly after the app starts.',
-            control: { type: 'toggle', key: 'syncOnStartup' },
-          },
-          {
-            name: 'Sync interval (minutes)',
-            desc: 'Re-sync every N minutes while the app is open. Set to 0 to disable the timer.',
-            control: { type: 'number', key: 'syncIntervalMinutes', min: 0, step: 1 },
-          },
-          {
-            name: 'Sync now',
-            action: () => {
-              void this.plugin.syncAll();
-            },
-          },
-        ],
-      },
-      {
-        type: 'group',
-        heading: 'Note output',
-        items: [
-          {
-            name: 'Base folder',
-            desc: 'Folder inside the vault where playlists are written (one subfolder per playlist).',
-            control: { type: 'text', key: 'baseFolder', placeholder: 'YouTube' },
-          },
-          {
-            name: 'Create index notes',
-            desc: 'Maintain an index note per playlist (table of videos) plus a root index.',
-            control: { type: 'toggle', key: 'createIndexNote' },
-          },
-          {
-            name: 'Transcript format',
-            control: {
-              type: 'dropdown',
-              key: 'transcriptMode',
-              options: { readable: 'Readable paragraphs', timestamped: 'Timestamped lines' },
-            },
-          },
-          {
-            name: 'Preferred caption language',
-            desc: 'Language code such as "en". Leave empty to use the first available transcript.',
-            control: { type: 'text', key: 'preferredLanguage', placeholder: 'en' },
-          },
-          {
-            name: 'Media embed',
-            control: {
-              type: 'dropdown',
-              key: 'mediaEmbed',
-              options: { video: 'YouTube video embed', thumbnail: 'Thumbnail image', off: 'None' },
-            },
-          },
-          {
-            name: 'Tags',
-            desc: 'Extra tags added to every generated note (space or comma separated).',
-            control: { type: 'text', key: 'extraTags' },
-          },
-        ],
-      },
-    ];
-  }
-
-  private renderPlaylistList(setting: Setting): void {
-    const listEl = setting.controlEl.createDiv();
-    if (!this.plugin.settings.playlists.length) {
-      listEl.createEl('p', { text: 'No playlists configured yet.', cls: 'setting-item-description' });
-    }
-    this.plugin.settings.playlists.forEach((playlist, index) => {
-      new Setting(listEl)
-        .setName(playlist.url)
-        .addButton((button) =>
-          button.setButtonText('Remove').onClick(async () => {
-            await this.removePlaylist(index);
-            this.refreshDeclarativeSettings();
-          }),
-        );
-    });
   }
 
   private async addPlaylist(url: string): Promise<boolean> {
@@ -151,17 +32,12 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
     await this.plugin.saveSettings();
   }
 
-  private refreshDeclarativeSettings(): void {
-    const update = (this as unknown as Record<string, unknown>)['update'];
-    if (typeof update === 'function') Reflect.apply(update, this, []);
-  }
-
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
 
     new Setting(containerEl).setName('Playlists').setHeading()
-      .setDesc('Public YouTube playlist URLs to sync. Only new videos are turned into notes; existing notes are never modified.');
+      .setDesc('Public YouTube playlist URLs to sync. Only new videos are turned into notes; existing notes are preserved.');
 
     const listEl = containerEl.createDiv();
     const renderList = () => {
@@ -174,9 +50,8 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
         new Setting(listEl)
           .setName(playlist.url)
           .addButton((button) =>
-            button.setButtonText('Remove').onClick(async () => {
-              await this.removePlaylist(index);
-              renderList();
+            button.setButtonText('Remove').onClick(() => {
+              void this.removePlaylist(index).then(renderList);
             }),
           );
       });
@@ -193,13 +68,13 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
         text.setPlaceholder('https://www.youtube.com/playlist?list=...');
       })
       .addButton((button) =>
-        button.setButtonText('Add').setCta().onClick(async () => {
-          const url = inputEl.value.trim();
-          if (!url) return;
-          if (await this.addPlaylist(url)) {
-            inputEl.value = '';
-            renderList();
-          }
+        button.setButtonText('Add').setCta().onClick(() => {
+          void this.addPlaylist(inputEl.value).then((added) => {
+            if (added) {
+              inputEl.value = '';
+              renderList();
+            }
+          });
         }),
       );
 
@@ -209,22 +84,22 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       .setName('Sync when Obsidian opens')
       .setDesc('Automatically sync all playlists shortly after Obsidian starts.')
       .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.syncOnStartup).onChange(async (value) => {
+        toggle.setValue(this.plugin.settings.syncOnStartup).onChange((value) => {
           this.plugin.settings.syncOnStartup = value;
-          await this.plugin.saveSettings();
+          void this.plugin.saveSettings();
         }),
       );
 
     new Setting(containerEl)
       .setName('Sync interval (minutes)')
-      .setDesc('Re-sync every N minutes while Obsidian is open. Set to 0 to disable the timer.')
+      .setDesc('Re-sync every N minutes while Obsidian is active. Set to 0 to disable. Mobile checks again when the app resumes.')
       .addText((text) =>
         text
           .setValue(String(this.plugin.settings.syncIntervalMinutes))
-          .onChange(async (value) => {
+          .onChange((value) => {
             const parsed = Number.parseInt(value, 10);
             this.plugin.settings.syncIntervalMinutes = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-            await this.plugin.saveSettings();
+            void this.plugin.saveSettings();
           }),
       );
 
@@ -240,9 +115,9 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       .setName('Base folder')
       .setDesc('Folder inside the vault where playlists are written (one subfolder per playlist).')
       .addText((text) =>
-        text.setValue(this.plugin.settings.baseFolder).onChange(async (value) => {
+        text.setValue(this.plugin.settings.baseFolder).onChange((value) => {
           this.plugin.settings.baseFolder = value.trim().replace(/^\/+|\/+$/g, '') || 'YouTube';
-          await this.plugin.saveSettings();
+          void this.plugin.saveSettings();
         }),
       );
 
@@ -250,9 +125,9 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       .setName('Create index notes')
       .setDesc('Maintain an index note per playlist (table of videos) plus a root index.')
       .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.createIndexNote).onChange(async (value) => {
+        toggle.setValue(this.plugin.settings.createIndexNote).onChange((value) => {
           this.plugin.settings.createIndexNote = value;
-          await this.plugin.saveSettings();
+          void this.plugin.saveSettings();
         }),
       );
 
@@ -263,9 +138,9 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
           .addOption('readable', 'Readable paragraphs')
           .addOption('timestamped', 'Timestamped lines')
           .setValue(this.plugin.settings.transcriptMode)
-          .onChange(async (value) => {
+          .onChange((value) => {
             this.plugin.settings.transcriptMode = value as 'readable' | 'timestamped';
-            await this.plugin.saveSettings();
+            void this.plugin.saveSettings();
           }),
       );
 
@@ -273,9 +148,9 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       .setName('Preferred caption language')
       .setDesc('Language code such as "en". Leave empty to use the first available transcript.')
       .addText((text) =>
-        text.setValue(this.plugin.settings.preferredLanguage).onChange(async (value) => {
+        text.setValue(this.plugin.settings.preferredLanguage).onChange((value) => {
           this.plugin.settings.preferredLanguage = value.trim();
-          await this.plugin.saveSettings();
+          void this.plugin.saveSettings();
         }),
       );
 
@@ -287,9 +162,9 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
           .addOption('thumbnail', 'Thumbnail image')
           .addOption('off', 'None')
           .setValue(this.plugin.settings.mediaEmbed)
-          .onChange(async (value) => {
+          .onChange((value) => {
             this.plugin.settings.mediaEmbed = value as 'video' | 'thumbnail' | 'off';
-            await this.plugin.saveSettings();
+            void this.plugin.saveSettings();
           }),
       );
 
@@ -297,9 +172,91 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       .setName('Tags')
       .setDesc('Extra tags added to every generated note (space or comma separated).')
       .addText((text) =>
-        text.setValue(this.plugin.settings.extraTags).onChange(async (value) => {
+        text.setValue(this.plugin.settings.extraTags).onChange((value) => {
           this.plugin.settings.extraTags = value;
-          await this.plugin.saveSettings();
+          void this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl).setName('AI summaries').setHeading()
+      .setDesc('Optional. When enabled, only a video transcript plus its title/channel is sent to OpenAI. Other vault content is not sent.');
+
+    new Setting(containerEl)
+      .setName('Enable AI summaries')
+      .setDesc('Enable OpenAI-powered summary commands and optional automatic summaries.')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.aiEnabled).onChange((value) => {
+          this.plugin.settings.aiEnabled = value;
+          void this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('OpenAI API key')
+      .setDesc('Select or create a secret. The key is stored in Obsidian SecretStorage, not this plugin\'s data.json.')
+      .addComponent((el) =>
+        new SecretComponent(this.app, el)
+          .setValue(this.plugin.settings.aiApiKeySecret)
+          .onChange((value) => {
+            this.plugin.settings.aiApiKeySecret = value;
+            void this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName('OpenAI model')
+      .setDesc('Luna is the recommended default for cost-sensitive high-volume summarization. Use Custom for any compatible model ID.')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('gpt-5.6-luna', 'GPT-5.6 Luna — recommended')
+          .addOption('gpt-5.6-terra', 'GPT-5.6 Terra — higher quality')
+          .addOption('gpt-5.6-sol', 'GPT-5.6 Sol — highest quality')
+          .addOption('custom', 'Custom model ID')
+          .setValue(this.plugin.settings.aiModel)
+          .onChange((value) => {
+            this.plugin.settings.aiModel = value as typeof this.plugin.settings.aiModel;
+            void this.plugin.saveSettings();
+            this.display();
+          }),
+      );
+
+    if (this.plugin.settings.aiModel === 'custom') {
+      new Setting(containerEl)
+        .setName('Custom OpenAI model ID')
+        .setDesc('Example: a model ID available to your OpenAI API project.')
+        .addText((text) =>
+          text.setPlaceholder('model-id').setValue(this.plugin.settings.aiCustomModel).onChange((value) => {
+            this.plugin.settings.aiCustomModel = value.trim();
+            void this.plugin.saveSettings();
+          }),
+        );
+    }
+
+    new Setting(containerEl)
+      .setName('Generate summaries automatically')
+      .setDesc('After a new YouTube note is safely created, generate and insert its AI summary. AI failure never fails the YouTube sync.')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.aiAutoGenerate).onChange((value) => {
+          this.plugin.settings.aiAutoGenerate = value;
+          void this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Test OpenAI connection')
+      .setDesc('Validate the selected secret and model without sending a transcript.')
+      .addButton((button) =>
+        button.setButtonText('Test connection').onClick(() => {
+          void this.plugin.testAIConnection();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Generate missing summaries')
+      .setDesc('Scan generated YouTube notes in the base folder and summarize notes that contain a transcript but no AI summary.')
+      .addButton((button) =>
+        button.setButtonText('Generate missing').setCta().onClick(() => {
+          void this.plugin.generateMissingSummaries();
         }),
       );
   }

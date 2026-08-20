@@ -1,10 +1,10 @@
 {
   "id": "youtube-playlist-sync",
   "name": "YouTube Playlist Sync",
-  "version": "0.1.2",
-  "minAppVersion": "1.4.0",
-  "description": "Automatically sync public YouTube playlists into notes with full metadata and transcripts.",
+  "version": "0.2.0",
+  "minAppVersion": "1.11.4",
+  "description": "Sync public YouTube playlists into notes with metadata, transcripts, and optional AI summaries.",
   "author": "YouTube Playlist Sync",
   "fundingUrl": "https://buymeacoffee.com/dagerottdev",
-  "isDesktopOnly": true
+  "isDesktopOnly": false
 }

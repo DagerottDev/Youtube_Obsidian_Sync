@@ -18,6 +18,18 @@ export interface YouTubePlaylistSyncSettings {
   extraTags: string;
   /** Media embed in generated notes. */
   mediaEmbed: 'video' | 'thumbnail' | 'off';
+  /** Enables AI summary commands and settings. */
+  aiEnabled: boolean;
+  /** Automatically generate an AI summary after a new YouTube note is created. */
+  aiAutoGenerate: boolean;
+  /** AI provider. Kept extensible for future providers. */
+  aiProvider: 'openai';
+  /** Name of the API key secret stored in Obsidian SecretStorage. */
+  aiApiKeySecret: string;
+  /** Curated model choice, or 'custom'. */
+  aiModel: 'gpt-5.6-luna' | 'gpt-5.6-terra' | 'gpt-5.6-sol' | 'custom';
+  /** Model ID used when aiModel is 'custom'. */
+  aiCustomModel: string;
 }
 
 export const DEFAULT_SETTINGS: YouTubePlaylistSyncSettings = {
@@ -30,7 +42,18 @@ export const DEFAULT_SETTINGS: YouTubePlaylistSyncSettings = {
   preferredLanguage: '',
   extraTags: 'youtube',
   mediaEmbed: 'video',
+  aiEnabled: false,
+  aiAutoGenerate: true,
+  aiProvider: 'openai',
+  aiApiKeySecret: '',
+  aiModel: 'gpt-5.6-luna',
+  aiCustomModel: '',
 };
+
+export function resolvedAIModel(settings: YouTubePlaylistSyncSettings): string {
+  if (settings.aiModel === 'custom') return settings.aiCustomModel.trim();
+  return settings.aiModel;
+}
 
 /** A single video row from a playlist listing (cheap, from the browse endpoint). */
 export interface PlaylistEntry {

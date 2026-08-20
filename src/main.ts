@@ -1,6 +1,7 @@
-import { Notice, Plugin, TFile, TFolder, normalizePath } from 'obsidian';
+import { Notice, Platform, Plugin, TFile, TFolder, normalizePath } from 'obsidian';
 import {
   DEFAULT_SETTINGS,
+  resolvedAIModel,
   type PlaylistSyncResult,
   type TranscriptLine,
   type VideoMetadata,
@@ -19,10 +20,19 @@ import {
   sanitizeNoteFileName,
 } from './noteRenderer';
 import { YouTubePlaylistSyncSettingTab } from './settings';
+import { OpenAIProvider } from './ai/openai';
+import {
+  applyAISummaryToNote,
+  extractChannelFromNote,
+  extractTitleFromNote,
+  extractTranscriptFromNote,
+  hasAISummary,
+} from './ai/noteUpdater';
 
 const PLAYLIST_ID_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
 const VIDEO_ID_FRONTMATTER_REGEX = /^videoId:\s*"?([^"\s]+)"?/m;
 const SOURCE_FRONTMATTER_REGEX = /^source:\s*youtube\b/m;
+const AI_MODELS = new Set(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol', 'custom']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -37,6 +47,9 @@ function normalizeSettings(value: unknown): YouTubePlaylistSyncSettings {
   const playlists = Array.isArray(stored.playlists)
     ? stored.playlists.filter(isPlaylist).map((playlist) => ({ url: playlist.url }))
     : [];
+  const aiModel = typeof stored.aiModel === 'string' && AI_MODELS.has(stored.aiModel)
+    ? stored.aiModel as YouTubePlaylistSyncSettings['aiModel']
+    : DEFAULT_SETTINGS.aiModel;
 
   return {
     playlists,
@@ -62,20 +75,36 @@ function normalizeSettings(value: unknown): YouTubePlaylistSyncSettings {
     mediaEmbed: stored.mediaEmbed === 'thumbnail' || stored.mediaEmbed === 'off'
       ? stored.mediaEmbed
       : 'video',
+    aiEnabled: typeof stored.aiEnabled === 'boolean' ? stored.aiEnabled : DEFAULT_SETTINGS.aiEnabled,
+    aiAutoGenerate: typeof stored.aiAutoGenerate === 'boolean'
+      ? stored.aiAutoGenerate
+      : DEFAULT_SETTINGS.aiAutoGenerate,
+    aiProvider: 'openai',
+    aiApiKeySecret: typeof stored.aiApiKeySecret === 'string'
+      ? stored.aiApiKeySecret
+      : DEFAULT_SETTINGS.aiApiKeySecret,
+    aiModel,
+    aiCustomModel: typeof stored.aiCustomModel === 'string'
+      ? stored.aiCustomModel
+      : DEFAULT_SETTINGS.aiCustomModel,
   };
 }
 
 export default class YouTubePlaylistSyncPlugin extends Plugin {
   settings: YouTubePlaylistSyncSettings = DEFAULT_SETTINGS;
   private isSyncing = false;
+  private isAISummarizing = false;
   private lastSyncAt = 0;
-  private statusBarEl!: HTMLElement;
+  private statusBarEl?: HTMLElement;
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    this.lastSyncAt = Date.now();
 
-    this.statusBarEl = this.addStatusBarItem();
-    this.updateStatusBar('idle');
+    if (Platform.isDesktopApp) {
+      this.statusBarEl = this.addStatusBarItem();
+      this.updateStatusBar('idle');
+    }
 
     this.addSettingTab(new YouTubePlaylistSyncSettingTab(this.app, this));
 
@@ -91,6 +120,22 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'generate-ai-summary-current-note',
+      name: 'Generate AI summary for current YouTube note',
+      callback: () => {
+        void this.generateSummaryForCurrentNote();
+      },
+    });
+
+    this.addCommand({
+      id: 'generate-missing-ai-summaries',
+      name: 'Generate missing AI summaries',
+      callback: () => {
+        void this.generateMissingSummaries();
+      },
+    });
+
     this.app.workspace.onLayoutReady(() => {
       if (this.settings.syncOnStartup) {
         window.setTimeout(() => {
@@ -99,15 +144,17 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       }
     });
 
-    // Lightweight interval that only syncs when the configured window has elapsed.
+    // Timers only run while Obsidian is active. This is also the intended mobile behavior.
     this.registerInterval(
       window.setInterval(() => {
-        const intervalMs = this.settings.syncIntervalMinutes * 60_000;
-        if (intervalMs > 0 && Date.now() - this.lastSyncAt >= intervalMs) {
-          void this.syncAll();
-        }
+        void this.syncIfIntervalElapsed();
       }, 60_000),
     );
+
+    // Mobile apps can suspend timers. Re-check the interval when the app becomes visible again.
+    this.registerDomEvent(document, 'visibilitychange', () => {
+      if (document.visibilityState === 'visible') void this.syncIfIntervalElapsed();
+    });
   }
 
   async loadSettings(): Promise<void> {
@@ -120,7 +167,14 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
   }
 
   private updateStatusBar(text: string): void {
-    this.statusBarEl.setText(`🔄 YT Sync: ${text}`);
+    this.statusBarEl?.setText(`🔄 YT Sync: ${text}`);
+  }
+
+  private async syncIfIntervalElapsed(): Promise<void> {
+    const intervalMs = this.settings.syncIntervalMinutes * 60_000;
+    if (intervalMs > 0 && Date.now() - this.lastSyncAt >= intervalMs) {
+      await this.syncAll();
+    }
   }
 
   private getPlaylistId(url: string): string | null {
@@ -185,12 +239,20 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     const folder = normalizePath(`${this.settings.baseFolder}/${sanitizeNoteFileName(name) || playlistId}`);
     await this.ensureFolder(folder);
 
-    // Find videos already synced by scanning existing notes in this folder.
     const synced = await this.scanSyncedVideoIds(folder);
 
     let created = 0;
     let skipped = 0;
     let failed = 0;
+    let autoAIProvider: OpenAIProvider | null = null;
+
+    if (this.settings.aiEnabled && this.settings.aiAutoGenerate) {
+      try {
+        autoAIProvider = this.createAIProvider();
+      } catch (error) {
+        console.warn('YouTube Sync: automatic AI summaries are unavailable for this sync', error);
+      }
+    }
 
     for (const entry of entries) {
       if (synced.has(entry.videoId)) {
@@ -207,14 +269,27 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
           this.settings,
         );
         const path = await this.uniqueNotePath(folder, meta.title || entry.title);
-        await this.app.vault.create(path, content);
+        const file = await this.app.vault.create(path, content);
         synced.add(entry.videoId);
         created += 1;
+
+        // AI is deliberately best-effort: a failed AI request never turns a successful YouTube sync into a failure.
+        if (autoAIProvider && transcript?.length) {
+          try {
+            await this.generateAISummaryForFile(file, {
+              title: meta.title,
+              channel: meta.author,
+              transcript: transcript.map((line) => line.text).join(' '),
+            }, autoAIProvider);
+          } catch (error) {
+            console.warn(`YouTube Sync: AI summary failed for "${meta.title}"`, error);
+            if (this.isFatalAIError(error)) autoAIProvider = null;
+          }
+        }
       } catch (error) {
         failed += 1;
         console.error(`YouTube Sync: failed for "${entry.title}"`, error);
       }
-      // Be gentle with YouTube between per-video requests.
       await new Promise((resolve) => window.setTimeout(resolve, 150));
     }
 
@@ -237,6 +312,134 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       console.warn(`YouTube Sync: no transcript for ${meta.videoId}`, error);
       return null;
     }
+  }
+
+  async testAIConnection(): Promise<void> {
+    try {
+      const provider = this.createAIProvider();
+      await provider.validateCredentials();
+      new Notice(`OpenAI connection succeeded (${provider.model}).`);
+    } catch (error) {
+      new Notice(`OpenAI connection failed: ${this.userFacingError(error)}`);
+    }
+  }
+
+  async generateSummaryForCurrentNote(): Promise<void> {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      new Notice('Open a YouTube note first.');
+      return;
+    }
+    try {
+      await this.generateAISummaryForFile(file);
+      new Notice('AI summary generated.');
+    } catch (error) {
+      new Notice(`AI summary failed: ${this.userFacingError(error)}`);
+    }
+  }
+
+  async generateMissingSummaries(): Promise<void> {
+    if (this.isAISummarizing) {
+      new Notice('AI summary generation is already running.');
+      return;
+    }
+    if (!this.settings.aiEnabled) {
+      new Notice('Enable AI summaries in plugin settings first.');
+      return;
+    }
+
+    let provider: OpenAIProvider;
+    try {
+      provider = this.createAIProvider();
+    } catch (error) {
+      new Notice(`AI summary setup error: ${this.userFacingError(error)}`);
+      return;
+    }
+
+    const base = normalizePath(this.settings.baseFolder);
+    const prefix = base.endsWith('/') ? base : `${base}/`;
+    const candidates: TFile[] = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!(file.path === `${base}/Index.md` || file.path.startsWith(prefix))) continue;
+      const content = await this.app.vault.cachedRead(file);
+      if (!SOURCE_FRONTMATTER_REGEX.test(content.slice(0, 4000))) continue;
+      if (!extractTranscriptFromNote(content) || hasAISummary(content)) continue;
+      candidates.push(file);
+    }
+
+    if (!candidates.length) {
+      new Notice('No YouTube notes are missing AI summaries.');
+      return;
+    }
+
+    this.isAISummarizing = true;
+    let succeeded = 0;
+    let failed = 0;
+    try {
+      for (const file of candidates) {
+        try {
+          await this.generateAISummaryForFile(file, undefined, provider);
+          succeeded += 1;
+        } catch (error) {
+          failed += 1;
+          console.warn(`YouTube Sync: AI summary failed for ${file.path}`, error);
+          if (this.isFatalAIError(error)) {
+            failed += candidates.length - succeeded - failed;
+            break;
+          }
+        }
+      }
+    } finally {
+      this.isAISummarizing = false;
+    }
+    new Notice(`AI summaries: ${succeeded} generated${failed ? `, ${failed} failed` : ''}.`);
+  }
+
+  private createAIProvider(): OpenAIProvider {
+    if (!this.settings.aiEnabled) throw new Error('AI summaries are disabled.');
+    const secretName = this.settings.aiApiKeySecret.trim();
+    if (!secretName) throw new Error('Choose an OpenAI API key secret in Settings.');
+    const apiKey = this.app.secretStorage.getSecret(secretName);
+    if (!apiKey) throw new Error(`The selected OpenAI secret "${secretName}" is empty or unavailable.`);
+    const model = resolvedAIModel(this.settings);
+    if (!model) throw new Error('Enter a custom OpenAI model ID or choose a recommended model.');
+    return new OpenAIProvider(apiKey, model);
+  }
+
+  private async generateAISummaryForFile(
+    file: TFile,
+    provided?: { title: string; channel?: string; transcript: string },
+    existingProvider?: OpenAIProvider,
+  ): Promise<void> {
+    const content = await this.app.vault.cachedRead(file);
+    if (!SOURCE_FRONTMATTER_REGEX.test(content.slice(0, 4000))) {
+      throw new Error('The current file is not a YouTube note generated by this plugin.');
+    }
+
+    const input = provided ?? {
+      title: extractTitleFromNote(content) ?? file.basename,
+      channel: extractChannelFromNote(content),
+      transcript: extractTranscriptFromNote(content) ?? '',
+    };
+    if (!input.transcript.trim()) throw new Error('This note does not contain a transcript to summarize.');
+
+    const provider = existingProvider ?? this.createAIProvider();
+    const summary = await provider.summarize(input);
+    const latestContent = await this.app.vault.read(file);
+    const updated = applyAISummaryToNote(latestContent, summary, provider.id, provider.model);
+    await this.app.vault.modify(file, updated);
+  }
+
+  private isFatalAIError(error: unknown): boolean {
+    const message = this.userFacingError(error).toLowerCase();
+    return message.includes('invalid openai api key')
+      || message.includes('rate limit or quota reached')
+      || message.includes('selected openai secret')
+      || message.includes('model is not configured');
+  }
+
+  private userFacingError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private async scanSyncedVideoIds(folder: string): Promise<Set<string>> {
