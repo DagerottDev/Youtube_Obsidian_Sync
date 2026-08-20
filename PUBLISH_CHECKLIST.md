@@ -9,15 +9,18 @@
 - [x] `versions.json` maps the current plugin version to its minimum Obsidian version.
 - [x] `main.js` is built from `src/` and committed.
 - [x] Type-check, production build, and the YouTube fetch smoke test pass.
+- [x] Support links are present in `README.md`, `.github/FUNDING.yml`, and `manifest.json`.
 
 ## External publication gates
 
-- [ ] Make `DagerottDev/Youtube_Obsidian_Sync` public on GitHub.
-- [ ] Create GitHub release `0.1.0` with `main.js` and `manifest.json` attached.
-- [ ] Sign in to the Obsidian Community directory.
-- [ ] Link the GitHub account that owns the repository to the Obsidian account.
-- [ ] Add **YouTube Playlist Sync** in the directory.
-- [ ] Resolve any automated review feedback and publish the directory entry.
+- [x] Make `DagerottDev/Youtube_Obsidian_Sync` public on GitHub.
+- [x] Create GitHub release `0.1.2` with `main.js` and `manifest.json` attached.
+- [x] Generate and verify GitHub artifact attestations for the release assets.
+- [x] Sign in to the Obsidian Community directory.
+- [x] Link the GitHub account that owns the repository to the Obsidian account.
+- [x] Add **YouTube Playlist Sync** in the directory.
+- [x] Resolve automated review feedback and publish the directory entry.
+- [x] Add international and India support links to the public listing.
 
 ## After approval
 
