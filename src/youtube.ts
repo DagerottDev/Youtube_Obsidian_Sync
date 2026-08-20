@@ -138,12 +138,12 @@ async function postJson(endpoint: string, headers: Record<string, string>, body:
   }
 }
 
-function assertPlayable(envelope: Record<string, any>): void {
-  const status = envelope?.playabilityStatus;
+function assertPlayable(envelope: PlayerEnvelope): void {
+  const status = envelope.playabilityStatus;
   if (!status) return;
-  if (status.status === 'ERROR') throw new Error(status.reason || 'Video unavailable');
+  if (status.status === 'ERROR') throw new Error(status.reason ?? 'Video unavailable');
   if (status.status === 'LOGIN_REQUIRED') throw new Error('This video requires login to view');
-  if (status.status === 'UNPLAYABLE') throw new Error(status.reason || 'Video is unplayable');
+  if (status.status === 'UNPLAYABLE') throw new Error(status.reason ?? 'Video is unplayable');
 }
 
 // ---------------------------------------------------------------------------
@@ -477,4 +477,3 @@ export async function fetchTranscriptLines(baseUrl: string): Promise<TranscriptL
   });
   return parseCaptionXml(response.text);
 }
-
