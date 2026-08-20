@@ -34,7 +34,7 @@ external tools. Everything happens inside Obsidian.
 
 1. In your vault, open the folder `.obsidian/plugins/` (create it if missing).
 2. Create a folder named `youtube-playlist-sync` inside it.
-3. Copy **`main.js`** and **`manifest.json`** from the latest [release](https://github.com/OWNER/youtube-playlist-sync/releases) into it.
+3. Copy **`main.js`** and **`manifest.json`** from the latest [release](https://github.com/DagerottDev/Youtube_Obsidian_Sync/releases) into it.
 4. Reload Obsidian and enable the plugin under **Settings → Community plugins**.
 
 ## Setup
@@ -79,6 +79,13 @@ embed, the transcript, and a Source section (channel, duration, upload date, pla
 - Transcript fetching needs the captions endpoint to work from your network; on rare occasions
   YouTube rate-limits it and some videos may be skipped on that run — the next sync will retry
   the ones that failed.
+
+## Network use and privacy
+
+The plugin makes outbound HTTPS requests to YouTube to fetch playlist data, video metadata,
+thumbnails, and captions for the public playlists you configure. It uses Obsidian's request
+API, does not require you to provide an API key, does not send vault contents to another
+service, and does not collect telemetry. It only writes notes inside the vault.
 
 ## Development
 
