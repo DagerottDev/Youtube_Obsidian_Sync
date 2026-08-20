@@ -99,6 +99,13 @@ node test/smoke.mjs <playlistId>   # end-to-end check of the YouTube fetch layer
 The fetch layer lives in `src/youtube.ts` (Innertube API, same approach as YT Knowledge
 Notes), note rendering in `src/noteRenderer.ts`, sync orchestration in `src/main.ts`.
 
+## Support
+
+If this plugin saves you time, you can support its development:
+
+- [Buy me a coffee](https://buymeacoffee.com/dagerottdev)
+- [Visit my Bondin profile](https://bondin.io/dagerottdev)
+
 ## License
 
 [MIT](LICENSE)
