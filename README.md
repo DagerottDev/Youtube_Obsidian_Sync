@@ -3,7 +3,8 @@
 An Obsidian plugin that automatically syncs **public YouTube playlists** into notes with the
 **same metadata as YT Knowledge Notes** (title, channel, URLs, IDs, thumbnail, description,
 upload date, category, duration, keywords) plus a **transcript**. YouTube syncing requires no
-YouTube API key. Optional AI summaries can be enabled with your own OpenAI API key.
+YouTube API key. Optional AI summaries can use OpenAI, NVIDIA NIM, or another
+OpenAI-compatible endpoint chosen by the user.
 
 The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
 
@@ -19,8 +20,11 @@ The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
 - Maintains an `_Index.md` per playlist (table of all videos) and a root `Index.md`.
 - Runs automatically: **when Obsidian opens**, on an **interval while Obsidian is active**, and
   via a **Sync now** command / ribbon button. Mobile re-checks the interval after the app resumes.
-- Optional **OpenAI summaries** with Summary, Key Takeaways, Important Concepts, Action Items,
+- Optional AI summaries with Summary, Key Takeaways, Important Concepts, Action Items,
   and Questions / Things to Explore.
+- AI provider presets for **OpenAI** and **NVIDIA NIM**, plus a **Custom OpenAI-compatible**
+  endpoint option.
+- Users control the AI base URL, API protocol, model ID, and SecretStorage credential.
 - AI summaries can run automatically for new notes, manually for the active note, or in bulk
   for existing notes that are missing summaries.
 - Regenerating an AI summary replaces only the plugin-managed AI block and preserves the rest
@@ -68,23 +72,71 @@ The first sync creates all video notes; later syncs only add new ones.
 | Preferred caption language | (empty) | e.g. `en`; empty = first available transcript |
 | Media embed | video | Embed the YouTube player, thumbnail, or nothing |
 | Tags | `youtube` | Extra tags added to every generated note |
-| Enable AI summaries | off | Enables OpenAI summary features |
-| OpenAI API key | — | Secret selected from Obsidian SecretStorage |
-| OpenAI model | `gpt-5.6-luna` | Recommended model; Terra, Sol, or a custom model ID are also available |
+| Enable AI summaries | off | Enables optional AI summary features |
+| AI provider | OpenAI | OpenAI, NVIDIA NIM, or Custom OpenAI-compatible endpoint |
+| API key | — | Secret selected from Obsidian SecretStorage; optional for unauthenticated custom/local endpoints |
+| API base URL | provider default | Endpoint base URL, normally ending in `/v1` |
+| API protocol | provider default | Responses API or Chat Completions |
+| Model ID | provider default | Any model ID available from the configured endpoint |
 | Generate summaries automatically | on | When AI is enabled, summarize new notes after they are created |
 
 ## AI summaries
 
 AI is completely optional. YouTube playlist syncing, metadata, transcripts, and note creation
-continue to work without OpenAI.
+continue to work without any AI provider.
 
 To enable AI summaries:
 
 1. Open **Settings → YouTube Playlist Sync → AI summaries**.
 2. Turn on **Enable AI summaries**.
-3. Select or create an **OpenAI API key** secret.
-4. Keep **GPT-5.6 Luna** for the recommended cost-sensitive default, or select another model.
-5. Use **Test connection**.
+3. Choose an **AI provider**.
+4. Select or create its API-key secret when required.
+5. Confirm the **API base URL**, **protocol**, and **model ID**.
+6. Use **Test connection**.
+
+### OpenAI
+
+The OpenAI preset uses:
+
+- Base URL: `https://api.openai.com/v1`
+- Protocol: Responses API
+- Starter model: `gpt-5.6-luna`
+
+The model ID and endpoint remain editable.
+
+**ChatGPT subscription OAuth is not used.** OpenAI currently does not expose a supported public
+flow that lets an arbitrary third-party Obsidian plugin consume OpenAI API models against a
+user's ChatGPT plan. The plugin therefore uses a user-supplied API key today. Its internal auth
+type is designed so a supported OAuth token flow can be added later without rewriting the AI
+summary engine.
+
+### NVIDIA NIM
+
+The NVIDIA NIM preset uses:
+
+- Base URL: `https://integrate.api.nvidia.com/v1`
+- Protocol: Chat Completions
+- Starter model: `openai/gpt-oss-20b`
+
+Replace the starter model with any model ID available to your NVIDIA endpoint. NVIDIA NIM is
+OpenAI-compatible, so the same summary provider can be reused with a NIM API key.
+
+### Custom OpenAI-compatible endpoint
+
+Choose **Custom OpenAI-compatible endpoint** to use another service or your own server. Configure:
+
+- API base URL
+- Responses API or Chat Completions
+- model ID
+- optional SecretStorage API key
+
+This can work with compatible hosted providers or self-hosted servers such as NIM/vLLM-style
+endpoints. A trusted local endpoint that requires no authentication may leave the secret unset.
+Compatibility depends on the endpoint implementing the selected OpenAI-style API.
+
+**Security:** the selected credential is sent as a Bearer token to the configured base URL.
+Only configure endpoints you trust. Switching provider presets clears the selected secret to
+reduce the chance of accidentally sending one provider's key to another provider.
 
 Commands:
 
@@ -94,7 +146,7 @@ Commands:
   generated notes that contain transcripts but do not yet have an AI summary.
 
 Automatic AI generation happens only **after** the YouTube note is successfully created. An
-OpenAI error therefore never causes the underlying playlist sync or note creation to fail.
+AI-provider error therefore never causes the underlying playlist sync or note creation to fail.
 
 For very long transcripts, the plugin summarizes transcript chunks first and then produces one
 final coherent summary.
@@ -135,10 +187,10 @@ so syncing resumes with the remaining videos.
   a large playlist can take a few minutes.
 - If a video has no transcript, its note is still created with full metadata. AI summary
   generation is skipped for that video.
-- YouTube or OpenAI can rate-limit requests. Failed YouTube videos can be retried on a later
-  sync; failed AI summaries can be generated later with the manual/bulk commands.
-- ChatGPT subscription access and OpenAI API billing are separate. This plugin uses a user-
-  supplied OpenAI API key; it does not use an unsupported ChatGPT/Codex OAuth flow.
+- YouTube or an AI provider can rate-limit requests. Failed YouTube videos can be retried on a
+  later sync; failed AI summaries can be generated later with the manual/bulk commands.
+- Provider compatibility depends on support for the selected OpenAI-style endpoint and response
+  format.
 
 ## Network use and privacy
 
@@ -149,9 +201,9 @@ It does not collect telemetry.
 When **AI summaries are disabled**, no vault content is sent to an AI service.
 
 When **AI summaries are enabled**, the plugin sends only the generated video's title, channel,
-and transcript to OpenAI for summarization. Other vault notes and unrelated vault content are
-not sent. The actual OpenAI API key is referenced through Obsidian SecretStorage rather than
-stored in the plugin's `data.json`.
+and transcript to the AI endpoint you configured. Other vault notes and unrelated vault content
+are not sent. API keys are referenced through Obsidian SecretStorage rather than stored in the
+plugin's `data.json`.
 
 ## Development
 
