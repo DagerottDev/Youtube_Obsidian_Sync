@@ -1,8 +1,8 @@
 import { requestUrl, type RequestUrlResponse } from 'obsidian';
-import type { AIProvider, AISummary, AISummaryInput } from './types';
+import type { AIProviderPreset, AIProtocol } from '../types';
+import { providerDisplayName } from '../types';
+import type { AIAuth, AIProvider, AISummary, AISummaryInput } from './types';
 
-const OPENAI_RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
-const OPENAI_MODELS_ENDPOINT = 'https://api.openai.com/v1/models';
 const DIRECT_TRANSCRIPT_CHAR_LIMIT = 240_000;
 const CHUNK_CHAR_LIMIT = 80_000;
 
@@ -19,7 +19,7 @@ const SUMMARY_SCHEMA = {
   required: ['summary', 'keyTakeaways', 'importantConcepts', 'actionItems', 'questionsToExplore'],
 } as const;
 
-interface OpenAIResponseEnvelope {
+interface ResponsesEnvelope {
   output?: Array<{
     type?: string;
     content?: Array<{
@@ -31,6 +31,24 @@ interface OpenAIResponseEnvelope {
   error?: { message?: string; code?: string };
 }
 
+interface ChatCompletionsEnvelope {
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+      refusal?: string | null;
+    };
+  }>;
+  error?: { message?: string; code?: string };
+}
+
+export interface OpenAICompatibleProviderOptions {
+  id: AIProviderPreset;
+  baseUrl: string;
+  model: string;
+  protocol: AIProtocol;
+  auth?: AIAuth;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -40,22 +58,28 @@ function stringArray(value: unknown): string[] | null {
   return value.map((item) => item.trim()).filter(Boolean);
 }
 
+function stripCodeFence(text: string): string {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return match?.[1]?.trim() ?? trimmed;
+}
+
 function parseSummary(text: string): AISummary {
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(stripCodeFence(text));
   } catch (error) {
-    throw new Error(`OpenAI returned invalid JSON: ${String(error)}`);
+    throw new Error(`AI endpoint returned invalid JSON: ${String(error)}`);
   }
   if (!isRecord(value) || typeof value.summary !== 'string') {
-    throw new Error('OpenAI returned an invalid summary payload.');
+    throw new Error('AI endpoint returned an invalid summary payload.');
   }
   const keyTakeaways = stringArray(value.keyTakeaways);
   const importantConcepts = stringArray(value.importantConcepts);
   const actionItems = stringArray(value.actionItems);
   const questionsToExplore = stringArray(value.questionsToExplore);
   if (!keyTakeaways || !importantConcepts || !actionItems || !questionsToExplore) {
-    throw new Error('OpenAI returned an invalid summary payload.');
+    throw new Error('AI endpoint returned an invalid summary payload.');
   }
   return {
     summary: value.summary.trim(),
@@ -66,36 +90,51 @@ function parseSummary(text: string): AISummary {
   };
 }
 
-function extractOutputText(envelope: OpenAIResponseEnvelope): string {
+function extractResponsesText(envelope: ResponsesEnvelope): string {
   if (envelope.error?.message) throw new Error(envelope.error.message);
   for (const item of envelope.output ?? []) {
     if (item.type !== 'message') continue;
     for (const content of item.content ?? []) {
       if (content.type === 'refusal' && content.refusal) {
-        throw new Error(`OpenAI refused the summary request: ${content.refusal}`);
+        throw new Error(`AI endpoint refused the summary request: ${content.refusal}`);
       }
       if (content.type === 'output_text' && content.text) return content.text;
     }
   }
-  throw new Error('OpenAI response did not contain summary text.');
+  throw new Error('AI endpoint response did not contain summary text.');
 }
 
-function responseError(response: RequestUrlResponse): Error {
+function extractChatText(envelope: ChatCompletionsEnvelope): string {
+  if (envelope.error?.message) throw new Error(envelope.error.message);
+  const message = envelope.choices?.[0]?.message;
+  if (message?.refusal) throw new Error(`AI endpoint refused the summary request: ${message.refusal}`);
+  if (typeof message?.content === 'string' && message.content.trim()) return message.content;
+  throw new Error('AI endpoint response did not contain summary text.');
+}
+
+function errorMessage(response: RequestUrlResponse): string {
   let parsed: unknown = null;
   try {
     parsed = response.json;
   } catch {
-    // Some upstream errors can return non-JSON bodies.
+    // Upstream proxies can return plain text or HTML.
   }
-  const message = isRecord(parsed)
+  return isRecord(parsed)
     && isRecord(parsed.error)
     && typeof parsed.error.message === 'string'
     ? parsed.error.message
     : response.text || `HTTP ${response.status}`;
+}
 
-  if (response.status === 401) return new Error('Invalid OpenAI API key.');
-  if (response.status === 429) return new Error(`OpenAI rate limit or quota reached. ${message}`);
-  return new Error(`OpenAI request failed (${response.status}): ${message}`);
+function responseError(response: RequestUrlResponse, displayName: string): Error {
+  const message = errorMessage(response);
+  if (response.status === 401 || response.status === 403) {
+    return new Error(`${displayName} rejected the configured API key or access token.`);
+  }
+  if (response.status === 429) {
+    return new Error(`${displayName} rate limit or quota reached. ${message}`);
+  }
+  return new Error(`${displayName} request failed (${response.status}): ${message}`);
 }
 
 function splitTranscript(text: string, chunkSize = CHUNK_CHAR_LIMIT): string[] {
@@ -108,7 +147,9 @@ function splitTranscript(text: string, chunkSize = CHUNK_CHAR_LIMIT): string[] {
       const paragraphBreak = text.lastIndexOf('\n\n', end);
       const sentenceBreak = text.lastIndexOf('. ', end);
       const preferred = Math.max(paragraphBreak, sentenceBreak);
-      if (preferred > start + Math.floor(chunkSize * 0.6)) end = preferred + (preferred === sentenceBreak ? 2 : 0);
+      if (preferred > start + Math.floor(chunkSize * 0.6)) {
+        end = preferred + (preferred === sentenceBreak ? 2 : 0);
+      }
     }
     chunks.push(text.slice(start, end).trim());
     start = end;
@@ -116,24 +157,63 @@ function splitTranscript(text: string, chunkSize = CHUNK_CHAR_LIMIT): string[] {
   return chunks.filter(Boolean);
 }
 
-export class OpenAIProvider implements AIProvider {
-  readonly id = 'openai' as const;
+function normalizeBaseUrl(value: string): string {
+  return value
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/(?:responses|chat\/completions|models)(?:\/[^/]*)?$/i, '');
+}
 
-  constructor(
-    private readonly apiKey: string,
-    readonly model: string,
-  ) {}
+function authHeaders(auth: AIAuth | undefined): Record<string, string> {
+  if (!auth?.token.trim()) return {};
+  return { Authorization: `Bearer ${auth.token}` };
+}
+
+function summaryInstruction(): string {
+  return [
+    'Summarize a YouTube transcript for a personal knowledge note.',
+    'Be concise but preserve important facts, reasoning, caveats, and practical implications.',
+    'Do not invent facts that are not supported by the transcript.',
+    'Action items may be empty when the video has no actionable recommendations.',
+    'Questions to explore should identify useful follow-up questions, not trivia.',
+    'Return only valid JSON with exactly these keys:',
+    'summary (string), keyTakeaways (string array), importantConcepts (string array), actionItems (string array), questionsToExplore (string array).',
+  ].join(' ');
+}
+
+export class OpenAICompatibleProvider implements AIProvider {
+  readonly id: AIProviderPreset;
+  readonly displayName: string;
+  readonly model: string;
+  readonly protocol: AIProtocol;
+  private readonly baseUrl: string;
+  private readonly auth?: AIAuth;
+
+  constructor(options: OpenAICompatibleProviderOptions) {
+    this.id = options.id;
+    this.displayName = providerDisplayName(options.id);
+    this.baseUrl = normalizeBaseUrl(options.baseUrl);
+    this.model = options.model.trim();
+    this.protocol = options.protocol;
+    this.auth = options.auth;
+  }
 
   async validateCredentials(): Promise<void> {
-    if (!this.apiKey.trim()) throw new Error('OpenAI API key is not configured.');
-    if (!this.model.trim()) throw new Error('OpenAI model is not configured.');
+    if (!this.baseUrl) throw new Error('AI endpoint is not configured.');
+    if (!this.model) throw new Error('AI model is not configured.');
+    if (this.id !== 'custom' && !this.auth?.token.trim()) {
+      throw new Error(`${this.displayName} API key is not configured.`);
+    }
+
     const response = await requestUrl({
-      url: `${OPENAI_MODELS_ENDPOINT}/${encodeURIComponent(this.model)}`,
+      url: `${this.baseUrl}/models`,
       method: 'GET',
-      headers: { Authorization: `Bearer ${this.apiKey}` },
+      headers: authHeaders(this.auth),
       throw: false,
     });
-    if (response.status < 200 || response.status >= 300) throw responseError(response);
+    if (response.status < 200 || response.status >= 300) {
+      throw responseError(response, this.displayName);
+    }
   }
 
   async summarize(input: AISummaryInput): Promise<AISummary> {
@@ -165,27 +245,24 @@ export class OpenAIProvider implements AIProvider {
   }
 
   private async createSummary(input: AISummaryInput): Promise<AISummary> {
+    return this.protocol === 'responses'
+      ? this.createResponsesSummary(input)
+      : this.createChatSummary(input);
+  }
+
+  private async createResponsesSummary(input: AISummaryInput): Promise<AISummary> {
     const response = await requestUrl({
-      url: OPENAI_RESPONSES_ENDPOINT,
+      url: `${this.baseUrl}/responses`,
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        ...authHeaders(this.auth),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model: this.model,
         store: false,
         input: [
-          {
-            role: 'developer',
-            content: [
-              'Summarize a YouTube transcript for a personal knowledge note.',
-              'Be concise but preserve important facts, reasoning, caveats, and practical implications.',
-              'Do not invent facts that are not supported by the transcript.',
-              'Action items may be empty when the video has no actionable recommendations.',
-              'Questions to explore should identify useful follow-up questions, not trivia.',
-            ].join(' '),
-          },
+          { role: 'developer', content: summaryInstruction() },
           {
             role: 'user',
             content: `Title: ${input.title}\nChannel: ${input.channel ?? 'Unknown'}\n\nTranscript:\n${input.transcript}`,
@@ -203,10 +280,39 @@ export class OpenAIProvider implements AIProvider {
       throw: false,
     });
 
-    if (response.status < 200 || response.status >= 300) throw responseError(response);
-    const envelope = response.json as OpenAIResponseEnvelope;
-    return parseSummary(extractOutputText(envelope));
+    if (response.status < 200 || response.status >= 300) {
+      throw responseError(response, this.displayName);
+    }
+    return parseSummary(extractResponsesText(response.json as ResponsesEnvelope));
+  }
+
+  private async createChatSummary(input: AISummaryInput): Promise<AISummary> {
+    const response = await requestUrl({
+      url: `${this.baseUrl}/chat/completions`,
+      method: 'POST',
+      headers: {
+        ...authHeaders(this.auth),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: [
+          { role: 'system', content: summaryInstruction() },
+          {
+            role: 'user',
+            content: `Title: ${input.title}\nChannel: ${input.channel ?? 'Unknown'}\n\nTranscript:\n${input.transcript}`,
+          },
+        ],
+        stream: false,
+      }),
+      throw: false,
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw responseError(response, this.displayName);
+    }
+    return parseSummary(extractChatText(response.json as ChatCompletionsEnvelope));
   }
 }
 
-export const __test = { parseSummary, splitTranscript };
+export const __test = { normalizeBaseUrl, parseSummary, splitTranscript, stripCodeFence };
