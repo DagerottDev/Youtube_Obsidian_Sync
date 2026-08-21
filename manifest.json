@@ -1,7 +1,7 @@
 {
   "id": "youtube-playlist-sync",
   "name": "YouTube Playlist Sync",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "minAppVersion": "1.11.4",
   "description": "Sync public YouTube playlists into notes with metadata, transcripts, and optional AI summaries.",
   "author": "YouTube Playlist Sync",
