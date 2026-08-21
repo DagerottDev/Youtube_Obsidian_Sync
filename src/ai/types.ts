@@ -1,3 +1,5 @@
+import type { AIProviderPreset, AIProtocol } from '../types';
+
 export interface AISummary {
   summary: string;
   keyTakeaways: string[];
@@ -12,9 +14,15 @@ export interface AISummaryInput {
   transcript: string;
 }
 
+export type AIAuth =
+  | { type: 'api-key'; token: string }
+  | { type: 'oauth'; token: string };
+
 export interface AIProvider {
-  readonly id: 'openai';
+  readonly id: AIProviderPreset;
+  readonly displayName: string;
   readonly model: string;
+  readonly protocol: AIProtocol;
   validateCredentials(): Promise<void>;
   summarize(input: AISummaryInput): Promise<AISummary>;
 }
