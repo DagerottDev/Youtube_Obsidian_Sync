@@ -1,3 +1,30 @@
+export type AIProviderPreset = 'openai' | 'nvidia-nim' | 'custom';
+export type AIProtocol = 'responses' | 'chat-completions';
+
+export interface AIProviderDefaults {
+  endpoint: string;
+  protocol: AIProtocol;
+  model: string;
+}
+
+export const AI_PROVIDER_DEFAULTS: Record<AIProviderPreset, AIProviderDefaults> = {
+  openai: {
+    endpoint: 'https://api.openai.com/v1',
+    protocol: 'responses',
+    model: 'gpt-5.6-luna',
+  },
+  'nvidia-nim': {
+    endpoint: 'https://integrate.api.nvidia.com/v1',
+    protocol: 'chat-completions',
+    model: 'openai/gpt-oss-20b',
+  },
+  custom: {
+    endpoint: '',
+    protocol: 'chat-completions',
+    model: '',
+  },
+};
+
 /** Settings persisted via plugin data. */
 export interface YouTubePlaylistSyncSettings {
   /** List of playlist URLs to sync. */
@@ -22,14 +49,16 @@ export interface YouTubePlaylistSyncSettings {
   aiEnabled: boolean;
   /** Automatically generate an AI summary after a new YouTube note is created. */
   aiAutoGenerate: boolean;
-  /** AI provider. Kept extensible for future providers. */
-  aiProvider: 'openai';
-  /** Name of the API key secret stored in Obsidian SecretStorage. */
+  /** Provider preset. Custom means any OpenAI-compatible endpoint. */
+  aiProvider: AIProviderPreset;
+  /** Base URL for the OpenAI-compatible API, normally ending in /v1. */
+  aiEndpoint: string;
+  /** API shape used for inference. */
+  aiProtocol: AIProtocol;
+  /** Name of the API key secret stored in Obsidian SecretStorage. Optional for custom local endpoints. */
   aiApiKeySecret: string;
-  /** Curated model choice, or 'custom'. */
-  aiModel: 'gpt-5.6-luna' | 'gpt-5.6-terra' | 'gpt-5.6-sol' | 'custom';
-  /** Model ID used when aiModel is 'custom'. */
-  aiCustomModel: string;
+  /** Model ID sent to the selected endpoint. */
+  aiModel: string;
 }
 
 export const DEFAULT_SETTINGS: YouTubePlaylistSyncSettings = {
@@ -45,14 +74,24 @@ export const DEFAULT_SETTINGS: YouTubePlaylistSyncSettings = {
   aiEnabled: false,
   aiAutoGenerate: true,
   aiProvider: 'openai',
+  aiEndpoint: AI_PROVIDER_DEFAULTS.openai.endpoint,
+  aiProtocol: AI_PROVIDER_DEFAULTS.openai.protocol,
   aiApiKeySecret: '',
-  aiModel: 'gpt-5.6-luna',
-  aiCustomModel: '',
+  aiModel: AI_PROVIDER_DEFAULTS.openai.model,
 };
 
+export function providerDisplayName(provider: AIProviderPreset): string {
+  if (provider === 'openai') return 'OpenAI';
+  if (provider === 'nvidia-nim') return 'NVIDIA NIM';
+  return 'Custom endpoint';
+}
+
+export function resolvedAIEndpoint(settings: YouTubePlaylistSyncSettings): string {
+  return settings.aiEndpoint.trim().replace(/\/+$/, '');
+}
+
 export function resolvedAIModel(settings: YouTubePlaylistSyncSettings): string {
-  if (settings.aiModel === 'custom') return settings.aiCustomModel.trim();
-  return settings.aiModel;
+  return settings.aiModel.trim();
 }
 
 /** A single video row from a playlist listing (cheap, from the browse endpoint). */
