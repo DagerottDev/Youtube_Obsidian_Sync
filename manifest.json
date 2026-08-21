@@ -4,7 +4,7 @@
   "version": "0.2.2",
   "minAppVersion": "1.11.4",
   "description": "Sync public YouTube playlists into notes with metadata, transcripts, and optional AI summaries.",
-  "author": "YouTube Playlist Sync",
+  "author": "DagerottDev",
   "fundingUrl": "https://buymeacoffee.com/dagerottdev",
   "isDesktopOnly": false
 }
