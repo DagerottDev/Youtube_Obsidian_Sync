@@ -8,6 +8,16 @@ OpenAI-compatible endpoint chosen by the user.
 
 The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
 
+## What's new
+
+- **Mobile support:** Use the same playlist management, sync-on-start, interval sync, manual
+  sync, transcripts, indexes, and note generation on iOS, iPadOS, and Android. Mobile interval
+  checks resume when Obsidian returns to the foreground.
+- **Optional AI summaries:** Generate summaries, key takeaways, important concepts, action items,
+  and questions for generated notes. Choose OpenAI, NVIDIA NIM, or another OpenAI-compatible
+  endpoint, then run summaries automatically for new notes, manually for the active note, or in
+  bulk for existing notes. Credentials stay in Obsidian SecretStorage.
+
 ## Features
 
 - Fetches each configured playlist straight from YouTube (via the same internal API youtube.com
