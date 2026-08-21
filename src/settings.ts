@@ -1,5 +1,6 @@
 import { App, Notice, PluginSettingTab, SecretComponent, Setting } from 'obsidian';
 import type YouTubePlaylistSyncPlugin from './main';
+import { AI_PROVIDER_DEFAULTS, providerDisplayName, type AIProtocol, type AIProviderPreset } from './types';
 
 const PLAYLIST_URL_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
 
@@ -30,6 +31,17 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
   private async removePlaylist(index: number): Promise<void> {
     this.plugin.settings.playlists.splice(index, 1);
     await this.plugin.saveSettings();
+  }
+
+  private async selectAIProvider(provider: AIProviderPreset, clearSecret: boolean): Promise<void> {
+    const defaults = AI_PROVIDER_DEFAULTS[provider];
+    this.plugin.settings.aiProvider = provider;
+    this.plugin.settings.aiEndpoint = defaults.endpoint;
+    this.plugin.settings.aiProtocol = defaults.protocol;
+    this.plugin.settings.aiModel = defaults.model;
+    if (clearSecret) this.plugin.settings.aiApiKeySecret = '';
+    await this.plugin.saveSettings();
+    this.display();
   }
 
   display(): void {
@@ -179,11 +191,11 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl).setName('AI summaries').setHeading()
-      .setDesc('Optional. When enabled, only a video transcript plus its title/channel is sent to OpenAI. Other vault content is not sent.');
+      .setDesc('Optional. Use OpenAI, NVIDIA NIM, or another OpenAI-compatible endpoint. Only the video title, channel, and transcript are sent.');
 
     new Setting(containerEl)
       .setName('Enable AI summaries')
-      .setDesc('Enable OpenAI-powered summary commands and optional automatic summaries.')
+      .setDesc('Enable AI summary commands and optional automatic summaries.')
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.aiEnabled).onChange((value) => {
           this.plugin.settings.aiEnabled = value;
@@ -192,8 +204,34 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('OpenAI API key')
-      .setDesc('Select or create a secret. The key is stored in Obsidian SecretStorage, not this plugin\'s data.json.')
+      .setName('AI provider')
+      .setDesc('Presets fill in a recommended base URL, protocol, and starter model. Custom accepts any OpenAI-compatible endpoint.')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('openai', 'OpenAI')
+          .addOption('nvidia-nim', 'NVIDIA NIM')
+          .addOption('custom', 'Custom OpenAI-compatible endpoint')
+          .setValue(this.plugin.settings.aiProvider)
+          .onChange((value) => {
+            void this.selectAIProvider(value as AIProviderPreset, true);
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName('Authentication')
+      .setDesc(
+        this.plugin.settings.aiProvider === 'custom'
+          ? 'API-key authentication is supported; the key may be left unset for a trusted local endpoint that requires no authentication. OpenAI OAuth is not currently available for third-party API usage.'
+          : 'API key via Obsidian SecretStorage. OpenAI OAuth / ChatGPT-plan authorization is not currently available for third-party API usage; the internal auth type is ready to add OAuth if a supported flow becomes available.',
+      );
+
+    new Setting(containerEl)
+      .setName(`${providerDisplayName(this.plugin.settings.aiProvider)} API key`)
+      .setDesc(
+        this.plugin.settings.aiProvider === 'custom'
+          ? 'Optional for local or otherwise unauthenticated endpoints. When selected, the key is stored in Obsidian SecretStorage.'
+          : 'Required. Select or create a secret; the key is stored in Obsidian SecretStorage, not this plugin\'s data.json.',
+      )
       .addComponent((el) =>
         new SecretComponent(this.app, el)
           .setValue(this.plugin.settings.aiApiKeySecret)
@@ -204,33 +242,53 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('OpenAI model')
-      .setDesc('Luna is the recommended default for cost-sensitive high-volume summarization. Use Custom for any compatible model ID.')
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption('gpt-5.6-luna', 'GPT-5.6 Luna — recommended')
-          .addOption('gpt-5.6-terra', 'GPT-5.6 Terra — higher quality')
-          .addOption('gpt-5.6-sol', 'GPT-5.6 Sol — highest quality')
-          .addOption('custom', 'Custom model ID')
-          .setValue(this.plugin.settings.aiModel)
+      .setName('API base URL')
+      .setDesc('Base URL for an OpenAI-compatible API, normally ending in /v1. The selected API key is sent to this host, so only use endpoints you trust.')
+      .addText((text) =>
+        text
+          .setPlaceholder('https://provider.example.com/v1')
+          .setValue(this.plugin.settings.aiEndpoint)
           .onChange((value) => {
-            this.plugin.settings.aiModel = value as typeof this.plugin.settings.aiModel;
+            this.plugin.settings.aiEndpoint = value.trim();
             void this.plugin.saveSettings();
-            this.display();
           }),
       );
 
-    if (this.plugin.settings.aiModel === 'custom') {
-      new Setting(containerEl)
-        .setName('Custom OpenAI model ID')
-        .setDesc('Example: a model ID available to your OpenAI API project.')
-        .addText((text) =>
-          text.setPlaceholder('model-id').setValue(this.plugin.settings.aiCustomModel).onChange((value) => {
-            this.plugin.settings.aiCustomModel = value.trim();
+    new Setting(containerEl)
+      .setName('API protocol')
+      .setDesc('Responses API is preferred for OpenAI. Chat Completions is supported by a wider range of OpenAI-compatible providers.')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('responses', 'Responses API (/responses)')
+          .addOption('chat-completions', 'Chat Completions (/chat/completions)')
+          .setValue(this.plugin.settings.aiProtocol)
+          .onChange((value) => {
+            this.plugin.settings.aiProtocol = value as AIProtocol;
             void this.plugin.saveSettings();
           }),
-        );
-    }
+      );
+
+    new Setting(containerEl)
+      .setName('Model ID')
+      .setDesc('Enter any model ID available at the selected endpoint. The provider preset only supplies a starting value.')
+      .addText((text) =>
+        text
+          .setPlaceholder('model-id')
+          .setValue(this.plugin.settings.aiModel)
+          .onChange((value) => {
+            this.plugin.settings.aiModel = value.trim();
+            void this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName('Reset provider defaults')
+      .setDesc('Restore the selected provider\'s default endpoint, protocol, and starter model without changing your saved secret.')
+      .addButton((button) =>
+        button.setButtonText('Reset defaults').onClick(() => {
+          void this.selectAIProvider(this.plugin.settings.aiProvider, false);
+        }),
+      );
 
     new Setting(containerEl)
       .setName('Generate summaries automatically')
@@ -243,8 +301,8 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Test OpenAI connection')
-      .setDesc('Validate the selected secret and model without sending a transcript.')
+      .setName('Test AI connection')
+      .setDesc('Validate the configured endpoint and authentication using its /models endpoint without sending a transcript.')
       .addButton((button) =>
         button.setButtonText('Test connection').onClick(() => {
           void this.plugin.testAIConnection();
