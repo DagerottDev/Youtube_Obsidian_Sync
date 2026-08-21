@@ -30,6 +30,28 @@ The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
 - Regenerating an AI summary replaces only the plugin-managed AI block and preserves the rest
   of the note.
 
+## Screenshots
+
+### Configure sync and note output
+
+![Sync settings](assets/screenshots/settings-sync.webp)
+
+### Manage multiple YouTube playlists
+
+![Playlist management](assets/screenshots/playlist-management.webp)
+
+### Generated video note metadata
+
+![Generated video note properties](assets/screenshots/video-note-properties.webp)
+
+### Video embed and transcript
+
+![Generated video note with transcript](assets/screenshots/video-note-transcript.webp)
+
+### Playlist index with linked notes
+
+![Playlist index](assets/screenshots/playlist-index.webp)
+
 ## Install
 
 ### From the community plugin directory (once approved)
