@@ -1,7 +1,12 @@
 import { Notice, Platform, Plugin, TFile, TFolder, normalizePath } from 'obsidian';
 import {
+  AI_PROVIDER_DEFAULTS,
   DEFAULT_SETTINGS,
+  providerDisplayName,
+  resolvedAIEndpoint,
   resolvedAIModel,
+  type AIProtocol,
+  type AIProviderPreset,
   type PlaylistSyncResult,
   type TranscriptLine,
   type VideoMetadata,
@@ -20,7 +25,8 @@ import {
   sanitizeNoteFileName,
 } from './noteRenderer';
 import { YouTubePlaylistSyncSettingTab } from './settings';
-import { OpenAIProvider } from './ai/openai';
+import { OpenAICompatibleProvider } from './ai/openai';
+import type { AIProvider } from './ai/types';
 import {
   applyAISummaryToNote,
   extractChannelFromNote,
@@ -32,7 +38,8 @@ import {
 const PLAYLIST_ID_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
 const VIDEO_ID_FRONTMATTER_REGEX = /^videoId:\s*"?([^"\s]+)"?/m;
 const SOURCE_FRONTMATTER_REGEX = /^source:\s*youtube\b/m;
-const AI_MODELS = new Set(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol', 'custom']);
+const AI_PROVIDERS = new Set<AIProviderPreset>(['openai', 'nvidia-nim', 'custom']);
+const AI_PROTOCOLS = new Set<AIProtocol>(['responses', 'chat-completions']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -47,9 +54,26 @@ function normalizeSettings(value: unknown): YouTubePlaylistSyncSettings {
   const playlists = Array.isArray(stored.playlists)
     ? stored.playlists.filter(isPlaylist).map((playlist) => ({ url: playlist.url }))
     : [];
-  const aiModel = typeof stored.aiModel === 'string' && AI_MODELS.has(stored.aiModel)
-    ? stored.aiModel as YouTubePlaylistSyncSettings['aiModel']
-    : DEFAULT_SETTINGS.aiModel;
+
+  const aiProvider = typeof stored.aiProvider === 'string' && AI_PROVIDERS.has(stored.aiProvider as AIProviderPreset)
+    ? stored.aiProvider as AIProviderPreset
+    : DEFAULT_SETTINGS.aiProvider;
+  const providerDefaults = AI_PROVIDER_DEFAULTS[aiProvider];
+  const aiProtocol = typeof stored.aiProtocol === 'string' && AI_PROTOCOLS.has(stored.aiProtocol as AIProtocol)
+    ? stored.aiProtocol as AIProtocol
+    : providerDefaults.protocol;
+
+  // Migrate the previous curated-model format where aiModel could be "custom" and aiCustomModel held the ID.
+  let aiModel = providerDefaults.model;
+  if (typeof stored.aiModel === 'string') {
+    if (stored.aiModel === 'custom') {
+      if (typeof stored.aiCustomModel === 'string' && stored.aiCustomModel.trim()) {
+        aiModel = stored.aiCustomModel.trim();
+      }
+    } else if (stored.aiModel.trim()) {
+      aiModel = stored.aiModel.trim();
+    }
+  }
 
   return {
     playlists,
@@ -79,14 +103,15 @@ function normalizeSettings(value: unknown): YouTubePlaylistSyncSettings {
     aiAutoGenerate: typeof stored.aiAutoGenerate === 'boolean'
       ? stored.aiAutoGenerate
       : DEFAULT_SETTINGS.aiAutoGenerate,
-    aiProvider: 'openai',
+    aiProvider,
+    aiEndpoint: typeof stored.aiEndpoint === 'string' && stored.aiEndpoint.trim()
+      ? stored.aiEndpoint.trim()
+      : providerDefaults.endpoint,
+    aiProtocol,
     aiApiKeySecret: typeof stored.aiApiKeySecret === 'string'
       ? stored.aiApiKeySecret
       : DEFAULT_SETTINGS.aiApiKeySecret,
     aiModel,
-    aiCustomModel: typeof stored.aiCustomModel === 'string'
-      ? stored.aiCustomModel
-      : DEFAULT_SETTINGS.aiCustomModel,
   };
 }
 
@@ -244,7 +269,7 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     let created = 0;
     let skipped = 0;
     let failed = 0;
-    let autoAIProvider: OpenAIProvider | null = null;
+    let autoAIProvider: AIProvider | null = null;
 
     if (this.settings.aiEnabled && this.settings.aiAutoGenerate) {
       try {
@@ -318,9 +343,9 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     try {
       const provider = this.createAIProvider();
       await provider.validateCredentials();
-      new Notice(`OpenAI connection succeeded (${provider.model}).`);
+      new Notice(`${provider.displayName} connection succeeded (${provider.model}).`);
     } catch (error) {
-      new Notice(`OpenAI connection failed: ${this.userFacingError(error)}`);
+      new Notice(`AI connection failed: ${this.userFacingError(error)}`);
     }
   }
 
@@ -348,7 +373,7 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       return;
     }
 
-    let provider: OpenAIProvider;
+    let provider: AIProvider;
     try {
       provider = this.createAIProvider();
     } catch (error) {
@@ -395,21 +420,38 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     new Notice(`AI summaries: ${succeeded} generated${failed ? `, ${failed} failed` : ''}.`);
   }
 
-  private createAIProvider(): OpenAIProvider {
+  private createAIProvider(): AIProvider {
     if (!this.settings.aiEnabled) throw new Error('AI summaries are disabled.');
-    const secretName = this.settings.aiApiKeySecret.trim();
-    if (!secretName) throw new Error('Choose an OpenAI API key secret in Settings.');
-    const apiKey = this.app.secretStorage.getSecret(secretName);
-    if (!apiKey) throw new Error(`The selected OpenAI secret "${secretName}" is empty or unavailable.`);
+
+    const endpoint = resolvedAIEndpoint(this.settings);
+    if (!endpoint) throw new Error('AI endpoint is not configured.');
     const model = resolvedAIModel(this.settings);
-    if (!model) throw new Error('Enter a custom OpenAI model ID or choose a recommended model.');
-    return new OpenAIProvider(apiKey, model);
+    if (!model) throw new Error('AI model is not configured.');
+
+    const displayName = providerDisplayName(this.settings.aiProvider);
+    const secretName = this.settings.aiApiKeySecret.trim();
+    if (this.settings.aiProvider !== 'custom' && !secretName) {
+      throw new Error(`Choose a ${displayName} API key secret in Settings.`);
+    }
+
+    const token = secretName ? this.app.secretStorage.getSecret(secretName) : null;
+    if (secretName && !token) {
+      throw new Error(`The selected AI secret "${secretName}" is empty or unavailable.`);
+    }
+
+    return new OpenAICompatibleProvider({
+      id: this.settings.aiProvider,
+      baseUrl: endpoint,
+      model,
+      protocol: this.settings.aiProtocol,
+      ...(token ? { auth: { type: 'api-key' as const, token } } : {}),
+    });
   }
 
   private async generateAISummaryForFile(
     file: TFile,
     provided?: { title: string; channel?: string; transcript: string },
-    existingProvider?: OpenAIProvider,
+    existingProvider?: AIProvider,
   ): Promise<void> {
     const content = await this.app.vault.cachedRead(file);
     if (!SOURCE_FRONTMATTER_REGEX.test(content.slice(0, 4000))) {
@@ -432,10 +474,12 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
 
   private isFatalAIError(error: unknown): boolean {
     const message = this.userFacingError(error).toLowerCase();
-    return message.includes('invalid openai api key')
+    return message.includes('rejected the configured api key')
+      || message.includes('api key is not configured')
       || message.includes('rate limit or quota reached')
-      || message.includes('selected openai secret')
-      || message.includes('model is not configured');
+      || message.includes('selected ai secret')
+      || message.includes('model is not configured')
+      || message.includes('endpoint is not configured');
   }
 
   private userFacingError(error: unknown): string {
