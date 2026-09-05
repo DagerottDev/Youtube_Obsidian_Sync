@@ -64,9 +64,9 @@ The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
 
 ## Install
 
-### From the community plugin directory (once approved)
+### From the community plugin directory
 
-**Settings → Community plugins → Browse → search "YouTube Playlist Sync" → Install → Enable.**
+[Install YouTube Playlist Sync directly from the Obsidian Community Plugins directory](https://obsidian.md/plugins?id=youtube-playlist-sync), then enable it.
 
 ### With BRAT
 
