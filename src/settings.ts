@@ -14,8 +14,10 @@ const PLAYLIST_URL_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]
 
 function textInputRows(input: HTMLTextAreaElement, rows: number): void {
   input.rows = rows;
-  input.style.width = '100%';
-  input.style.fontFamily = 'var(--font-monospace)';
+  input.setCssStyles({
+    width: '100%',
+    fontFamily: 'var(--font-monospace)',
+  });
 }
 
 class TextPreviewModal extends Modal {
