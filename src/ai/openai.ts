@@ -1,7 +1,8 @@
 import { requestUrl, type RequestUrlResponse } from 'obsidian';
-import type { AIProviderPreset, AIProtocol } from '../types';
+import type { AIPromptMode, AIProviderPreset, AIProtocol } from '../types';
 import { providerDisplayName } from '../types';
 import type { AIAuth, AIProvider, AISummary, AISummaryInput } from './types';
+import { buildSummaryInstruction } from './prompt';
 
 const DIRECT_TRANSCRIPT_CHAR_LIMIT = 240_000;
 const CHUNK_CHAR_LIMIT = 80_000;
@@ -47,6 +48,8 @@ export interface OpenAICompatibleProviderOptions {
   model: string;
   protocol: AIProtocol;
   auth?: AIAuth;
+  promptMode?: AIPromptMode;
+  customPrompt?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -169,18 +172,6 @@ function authHeaders(auth: AIAuth | undefined): Record<string, string> {
   return { Authorization: `Bearer ${auth.token}` };
 }
 
-function summaryInstruction(): string {
-  return [
-    'Summarize a YouTube transcript for a personal knowledge note.',
-    'Be concise but preserve important facts, reasoning, caveats, and practical implications.',
-    'Do not invent facts that are not supported by the transcript.',
-    'Action items may be empty when the video has no actionable recommendations.',
-    'Questions to explore should identify useful follow-up questions, not trivia.',
-    'Return only valid JSON with exactly these keys:',
-    'summary (string), keyTakeaways (string array), importantConcepts (string array), actionItems (string array), questionsToExplore (string array).',
-  ].join(' ');
-}
-
 export class OpenAICompatibleProvider implements AIProvider {
   readonly id: AIProviderPreset;
   readonly displayName: string;
@@ -188,6 +179,8 @@ export class OpenAICompatibleProvider implements AIProvider {
   readonly protocol: AIProtocol;
   private readonly baseUrl: string;
   private readonly auth?: AIAuth;
+  private readonly promptMode: AIPromptMode;
+  private readonly customPrompt: string;
 
   constructor(options: OpenAICompatibleProviderOptions) {
     this.id = options.id;
@@ -196,6 +189,8 @@ export class OpenAICompatibleProvider implements AIProvider {
     this.model = options.model.trim();
     this.protocol = options.protocol;
     this.auth = options.auth;
+    this.promptMode = options.promptMode ?? 'default';
+    this.customPrompt = options.customPrompt ?? '';
   }
 
   async validateCredentials(): Promise<void> {
@@ -262,7 +257,7 @@ export class OpenAICompatibleProvider implements AIProvider {
         model: this.model,
         store: false,
         input: [
-          { role: 'developer', content: summaryInstruction() },
+          { role: 'developer', content: buildSummaryInstruction(this.promptMode, this.customPrompt) },
           {
             role: 'user',
             content: `Title: ${input.title}\nChannel: ${input.channel ?? 'Unknown'}\n\nTranscript:\n${input.transcript}`,
@@ -297,7 +292,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       body: JSON.stringify({
         model: this.model,
         messages: [
-          { role: 'system', content: summaryInstruction() },
+          { role: 'system', content: buildSummaryInstruction(this.promptMode, this.customPrompt) },
           {
             role: 'user',
             content: `Title: ${input.title}\nChannel: ${input.channel ?? 'Unknown'}\n\nTranscript:\n${input.transcript}`,

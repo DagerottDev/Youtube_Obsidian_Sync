@@ -1,5 +1,31 @@
 export type AIProviderPreset = 'openai' | 'nvidia-nim' | 'custom';
 export type AIProtocol = 'responses' | 'chat-completions';
+export type AIPromptMode = 'default' | 'append' | 'replace';
+
+export const DEFAULT_VIDEO_FRONTMATTER_TEMPLATE = [
+  'title: {{title}}',
+  'aliases: {{aliases}}',
+  'source: youtube',
+  'channel: {{channel}}',
+  'channelUrl: {{channelUrl}}',
+  'channelId: {{channelId}}',
+  'videoUrl: {{videoUrl}}',
+  'videoId: {{videoId}}',
+  'playlistUrl: {{playlistUrl}}',
+  'playlistId: {{playlistId}}',
+  'thumbnailUrl: {{thumbnailUrl}}',
+  'videoDescription: {{videoDescription}}',
+  'uploadDate: {{uploadDate}}',
+  'videoCategory: {{videoCategory}}',
+  'durationSeconds: {{durationSeconds}}',
+  'keywords: {{keywords}}',
+  'generated: {{generated}}',
+  'tags: {{tags}}',
+  'aiSummary: {{aiSummary}}',
+  'aiProvider: {{aiProvider}}',
+  'aiModel: {{aiModel}}',
+  'aiGenerated: {{aiGenerated}}',
+].join('\n');
 
 export interface AIProviderDefaults {
   endpoint: string;
@@ -59,6 +85,12 @@ export interface YouTubePlaylistSyncSettings {
   aiApiKeySecret: string;
   /** Model ID sent to the selected endpoint. */
   aiModel: string;
+  /** Controls whether custom AI instructions are ignored, appended, or replace the default guidance. */
+  aiPromptMode: AIPromptMode;
+  /** Optional custom AI summarization guidance. Transcript content is supplied separately. */
+  aiCustomPrompt: string;
+  /** YAML template used for generated video-note frontmatter. */
+  videoFrontmatterTemplate: string;
 }
 
 export const DEFAULT_SETTINGS: YouTubePlaylistSyncSettings = {
@@ -78,6 +110,9 @@ export const DEFAULT_SETTINGS: YouTubePlaylistSyncSettings = {
   aiProtocol: AI_PROVIDER_DEFAULTS.openai.protocol,
   aiApiKeySecret: '',
   aiModel: AI_PROVIDER_DEFAULTS.openai.model,
+  aiPromptMode: 'default',
+  aiCustomPrompt: '',
+  videoFrontmatterTemplate: DEFAULT_VIDEO_FRONTMATTER_TEMPLATE,
 };
 
 export function providerDisplayName(provider: AIProviderPreset): string {

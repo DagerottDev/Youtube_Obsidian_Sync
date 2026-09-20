@@ -1,0 +1,119 @@
+name: Bug report
+description: Report a reproducible problem with YouTube Playlist Sync.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve YouTube Playlist Sync.
+
+        Do not include API keys, secret names, access tokens, private playlist data, or private transcript content.
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Find this in Settings → Community plugins or the plugin manifest.
+      placeholder: "0.3.0"
+    validations:
+      required: true
+
+  - type: input
+    id: obsidian-version
+    attributes:
+      label: Obsidian version
+      placeholder: "1.11.4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Device and platform
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - iOS
+        - iPadOS
+        - Android
+    validations:
+      required: true
+
+  - type: dropdown
+    id: transcript-mode
+    attributes:
+      label: Transcript mode
+      options:
+        - Readable paragraphs
+        - Timestamped lines
+        - Not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai-provider
+    attributes:
+      label: AI provider
+      options:
+        - OpenAI
+        - NVIDIA NIM
+        - Custom OpenAI-compatible endpoint
+        - AI summaries disabled
+        - Not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai-protocol
+    attributes:
+      label: AI protocol
+      options:
+        - Responses API
+        - Chat Completions
+        - Not applicable
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest reliable sequence that triggers the problem.
+      placeholder: |
+        1. Configure...
+        2. Run...
+        3. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and error message
+      description: Paste the exact error text after removing secrets and private content.
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Logs and screenshots
+      description: Optional. Remove secrets and private note or transcript content before attaching anything.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed API keys, secrets, tokens, and private transcript or playlist content.
+          required: true

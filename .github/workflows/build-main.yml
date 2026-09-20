@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'test/**'
       - 'package.json'
       - 'package-lock.json'
       - 'esbuild.config.mjs'
       - 'tsconfig.json'
+      - 'vitest.config.ts'
 
 permissions:
   contents: write
@@ -30,6 +32,9 @@ jobs:
         run: npm ci
 
       - name: Build plugin
+        run: npm run check
+
+      - name: Build plugin bundle
         run: npm run build
 
       - name: Commit generated main.js

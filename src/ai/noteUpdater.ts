@@ -6,6 +6,7 @@ export const AI_SUMMARY_END = '<!-- youtube-playlist-sync:ai-summary:end -->';
 const FRONTMATTER_END_REGEX = /^---\s*$/m;
 const TRANSCRIPT_HEADING_REGEX = /^## Transcript\s*$/m;
 const NEXT_H2_REGEX = /^##\s+/m;
+const TIMESTAMPED_TRANSCRIPT_PREFIX = /^\s*-\s+\[[^\]]+\]\(https:\/\/youtu\.be\/[A-Za-z0-9_-]+\?t=\d+\)\s*/;
 
 function markdownList(items: string[]): string {
   return items.length ? items.map((item) => `- ${item}`).join('\n') : '- None';
@@ -50,7 +51,16 @@ export function extractTranscriptFromNote(content: string): string | null {
   const rest = content.slice(afterHeading).replace(/^\s+/, '');
   const next = NEXT_H2_REGEX.exec(rest);
   const transcript = (next ? rest.slice(0, next.index) : rest).trim();
-  return transcript || null;
+  return normalizeTranscriptForAI(transcript);
+}
+
+export function normalizeTranscriptForAI(transcript: string): string | null {
+  const normalized = transcript
+    .split(/\r?\n/)
+    .map((line) => line.replace(TIMESTAMPED_TRANSCRIPT_PREFIX, '').replace(/\s+$/, ''))
+    .join('\n')
+    .trim();
+  return normalized || null;
 }
 
 export function extractTitleFromNote(content: string): string | null {
@@ -84,6 +94,16 @@ export function applyAISummaryToNote(
   model: string,
   generatedAt = new Date().toISOString(),
 ): string {
+  let updated = applyAISummaryBlockToNote(content, summary);
+
+  updated = upsertFrontmatterScalar(updated, 'aiSummary', 'true');
+  updated = upsertFrontmatterScalar(updated, 'aiProvider', `"${provider.replace(/"/g, '\\"')}"`);
+  updated = upsertFrontmatterScalar(updated, 'aiModel', `"${model.replace(/"/g, '\\"')}"`);
+  updated = upsertFrontmatterScalar(updated, 'aiGenerated', generatedAt);
+  return updated;
+}
+
+export function applyAISummaryBlockToNote(content: string, summary: AISummary): string {
   const block = renderAISummary(summary);
   let updated = content;
 
@@ -105,10 +125,6 @@ export function applyAISummaryToNote(
     }
   }
 
-  updated = upsertFrontmatterScalar(updated, 'aiSummary', 'true');
-  updated = upsertFrontmatterScalar(updated, 'aiProvider', `"${provider.replace(/"/g, '\\"')}"`);
-  updated = upsertFrontmatterScalar(updated, 'aiModel', `"${model.replace(/"/g, '\\"')}"`);
-  updated = upsertFrontmatterScalar(updated, 'aiGenerated', generatedAt);
   return updated;
 }
 

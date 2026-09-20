@@ -1,5 +1,12 @@
 import type { PlaylistEntry, TranscriptLine, VideoMetadata, YouTubePlaylistSyncSettings } from './types';
 import { normalizeWhitespace } from './youtube';
+import {
+  createVideoMetadataRecord,
+  parseVideoTemplate,
+  renderVideoMetadataMarker,
+  type ParseYaml,
+  type VideoTemplateValues,
+} from './frontmatter';
 
 // ---------------------------------------------------------------------------
 // Filename helpers (same rules YT Knowledge Notes uses)
@@ -25,10 +32,6 @@ export function sanitizeNoteFileName(title: string): string {
   if (WINDOWS_RESERVED_NAMES.has(cleaned.toUpperCase())) return `${cleaned} note`;
   return cleaned;
 }
-
-// ---------------------------------------------------------------------------
-// YAML helpers (matching ytkn's frontmatter format)
-// ---------------------------------------------------------------------------
 
 function escapeYamlString(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -65,43 +68,40 @@ function timestamp(offsetMs: number): string {
 // Frontmatter (same property set YT Knowledge Notes emits)
 // ---------------------------------------------------------------------------
 
-export function buildVideoFrontmatter(
-  meta: VideoMetadata,
-  playlist: { name: string; url: string; id: string },
-  extraTags: string,
-): string {
-  const lines: string[] = ['---'];
-  lines.push(`title: ${quoteYaml(meta.title)}`);
-  lines.push('aliases:');
-  lines.push(` - ${quoteYaml(meta.title)}`);
-  lines.push('source: youtube');
-  if (meta.author) lines.push(`channel: ${quoteYaml(meta.author)}`);
-  if (meta.channelUrl) lines.push(`channelUrl: ${quoteYaml(meta.channelUrl)}`);
-  if (meta.channelId) lines.push(`channelId: ${quoteYaml(meta.channelId)}`);
-  lines.push(`videoUrl: ${quoteYaml(meta.url)}`);
-  lines.push(`videoId: ${quoteYaml(meta.videoId)}`);
-  lines.push(`playlistUrl: ${quoteYaml(playlist.url)}`);
-  lines.push(`playlistId: ${quoteYaml(playlist.id)}`);
-  if (meta.thumbnailUrl) lines.push(`thumbnailUrl: ${quoteYaml(meta.thumbnailUrl)}`);
-  if (meta.description) lines.push(`videoDescription: ${quoteYaml(meta.description)}`);
-  if (meta.uploadDate) lines.push(`uploadDate: ${meta.uploadDate}`);
-  if (meta.videoCategory) lines.push(`videoCategory: ${quoteYaml(meta.videoCategory)}`);
-  if (meta.durationSeconds !== undefined) lines.push(`durationSeconds: ${meta.durationSeconds}`);
-  if (meta.keywords && meta.keywords.length) {
-    lines.push('keywords:');
-    for (const keyword of meta.keywords) lines.push(` - ${quoteYaml(keyword)}`);
-  }
-  lines.push(`generated: ${new Date().toISOString()}`);
-  const tags = extraTags
+function parseTags(extraTags: string): string[] {
+  return extraTags
     .split(/[\s,]+/)
     .map((tag) => tag.trim().replace(/^#+/, ''))
     .filter((tag) => tag.length > 0);
-  if (tags.length) {
-    lines.push('tags:');
-    for (const tag of tags) lines.push(` - ${tag}`);
-  }
-  lines.push('---');
-  return lines.join('\n');
+}
+
+export function buildVideoTemplateValues(
+  meta: VideoMetadata,
+  playlist: { name: string; url: string; id: string },
+  extraTags: string,
+  generated = new Date().toISOString(),
+): VideoTemplateValues {
+  const tags = parseTags(extraTags);
+  return {
+    title: meta.title,
+    aliases: [meta.title],
+    source: 'youtube',
+    channel: meta.author || undefined,
+    channelUrl: meta.channelUrl || undefined,
+    channelId: meta.channelId,
+    videoUrl: meta.url,
+    videoId: meta.videoId,
+    playlistUrl: playlist.url,
+    playlistId: playlist.id,
+    thumbnailUrl: meta.thumbnailUrl || undefined,
+    videoDescription: meta.description,
+    uploadDate: meta.uploadDate,
+    videoCategory: meta.videoCategory,
+    durationSeconds: meta.durationSeconds,
+    keywords: meta.keywords?.length ? meta.keywords : undefined,
+    generated,
+    tags: tags.length ? tags : undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -142,9 +142,17 @@ export function buildVideoNote(
   playlist: { name: string; url: string; id: string },
   transcript: TranscriptLine[] | null,
   settings: YouTubePlaylistSyncSettings,
+  parseYaml: ParseYaml,
+  template = settings.videoFrontmatterTemplate,
 ): string {
   const parts: string[] = [];
-  parts.push(buildVideoFrontmatter(meta, playlist, settings.extraTags));
+  const values = buildVideoTemplateValues(meta, playlist, settings.extraTags);
+  const rendered = parseVideoTemplate(template, values, parseYaml);
+  const record = createVideoMetadataRecord(values, rendered.managedKeys, template);
+  parts.push('---');
+  parts.push(rendered.yaml);
+  parts.push('---');
+  parts.push(renderVideoMetadataMarker(record));
   parts.push('');
   parts.push(`# ${meta.title}`);
   parts.push('');

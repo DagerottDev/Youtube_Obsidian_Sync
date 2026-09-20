@@ -10,13 +10,12 @@ The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
 
 ## What's new
 
-- **Mobile support:** Use the same playlist management, sync-on-start, interval sync, manual
-  sync, transcripts, indexes, and note generation on iOS, iPadOS, and Android. Mobile interval
-  checks resume when Obsidian returns to the foreground.
-- **Optional AI summaries:** Generate summaries, key takeaways, important concepts, action items,
-  and questions for generated notes. Choose OpenAI, NVIDIA NIM, or another OpenAI-compatible
-  endpoint, then run summaries automatically for new notes, manually for the active note, or in
-  bulk for existing notes. Credentials stay in Obsidian SecretStorage.
+- **Custom AI instructions:** Keep the built-in summary prompt, append your own guidance, or
+  replace the guidance while retaining the structured summary format.
+- **Custom video-note properties:** Define video frontmatter with a validated YAML template and
+  preview or migrate existing generated notes without changing their bodies.
+- **Timestamped summary fix:** Manual and bulk AI summaries now strip the plugin's timestamp links
+  before sending transcript text to the selected provider.
 
 ## Features
 
@@ -39,6 +38,8 @@ The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
   for existing notes that are missing summaries.
 - Regenerating an AI summary replaces only the plugin-managed AI block and preserves the rest
   of the note.
+- A validated YAML template controls video-note frontmatter, with an explicit preview-and-confirm
+  migration for existing notes.
 
 ## Screenshots
 
@@ -104,12 +105,15 @@ The first sync creates all video notes; later syncs only add new ones.
 | Preferred caption language | (empty) | e.g. `en`; empty = first available transcript |
 | Media embed | video | Embed the YouTube player, thumbnail, or nothing |
 | Tags | `youtube` | Extra tags added to every generated note |
+| Video frontmatter template | built-in metadata template | Customize properties for newly generated video notes |
 | Enable AI summaries | off | Enables optional AI summary features |
 | AI provider | OpenAI | OpenAI, NVIDIA NIM, or Custom OpenAI-compatible endpoint |
 | API key | — | Secret selected from Obsidian SecretStorage; optional for unauthenticated custom/local endpoints |
 | API base URL | provider default | Endpoint base URL, normally ending in `/v1` |
 | API protocol | provider default | Responses API or Chat Completions |
 | Model ID | provider default | Any model ID available from the configured endpoint |
+| AI prompt mode | default | Use, append to, or replace the built-in summarization guidance |
+| Custom AI instructions | (empty) | Optional focus, tone, and detail instructions |
 | Generate summaries automatically | on | When AI is enabled, summarize new notes after they are created |
 
 ## AI summaries
@@ -183,6 +187,19 @@ AI-provider error therefore never causes the underlying playlist sync or note cr
 For very long transcripts, the plugin summarizes transcript chunks first and then produces one
 final coherent summary.
 
+### Custom AI instructions
+
+The **AI prompt mode** setting has three choices:
+
+- **Default guidance** uses the plugin's built-in prompt.
+- **Append custom instructions** keeps the built-in prompt and adds your guidance.
+- **Replace guidance (advanced)** replaces the built-in guidance with your text.
+
+The fixed JSON response contract is always retained so the five rendered summary sections stay
+reliable. The video title, channel, and transcript are supplied separately; custom instructions
+should describe the desired focus, tone, or level of detail. Clear the instructions and switch
+back to **Default guidance** to restore the original behavior.
+
 ## Note format (metadata parity with YT Knowledge Notes)
 
 Every video note has YAML frontmatter with the same core property set ytkn uses:
@@ -193,6 +210,38 @@ Every video note has YAML frontmatter with the same core property set ytkn uses:
 When an AI summary is generated, the plugin also records `aiSummary`, `aiProvider`, `aiModel`,
 and `aiGenerated`. The AI content is wrapped in internal markers so regeneration can safely
 replace that block without touching your other edits.
+
+### Frontmatter templates
+
+The **Video frontmatter template** setting accepts YAML without the opening and closing `---`
+lines. Values are inserted with placeholders:
+
+`title`, `aliases`, `source`, `channel`, `channelUrl`, `channelId`, `videoUrl`, `videoId`,
+`playlistUrl`, `playlistId`, `thumbnailUrl`, `videoDescription`, `uploadDate`, `videoCategory`,
+`durationSeconds`, `keywords`, `generated`, `tags`, `aiSummary`, `aiProvider`, `aiModel`, and
+`aiGenerated`.
+
+For example:
+
+```yaml
+title: {{title}}
+source: youtube
+videoId: {{videoId}}
+url: {{videoUrl}}
+creator: {{channel}}
+topics: {{tags}}
+```
+
+Placeholder values are YAML-encoded. If an optional value is unavailable, its entire template
+line is omitted. `source: youtube` and a non-empty `videoId` are required so the plugin can
+recognize notes and avoid duplicates. Use **Validate and save** before syncing, **Preview** to
+inspect sample output, or **Reset default** to restore all standard properties.
+
+Template changes affect new notes only. To update existing generated video notes, run
+**Apply frontmatter template to existing YouTube notes** from the command palette or plugin
+settings. The migration shows a sample and note counts before confirmation, preserves note
+bodies and unknown user properties, and reports changed, unchanged, skipped, and failed notes.
+YAML comments and formatting may be normalized. Playlist and root index notes are never migrated.
 
 ## Mobile behavior
 
@@ -233,15 +282,21 @@ It does not collect telemetry.
 When **AI summaries are disabled**, no vault content is sent to an AI service.
 
 When **AI summaries are enabled**, the plugin sends only the generated video's title, channel,
-and transcript to the AI endpoint you configured. Other vault notes and unrelated vault content
-are not sent. API keys are referenced through Obsidian SecretStorage rather than stored in the
-plugin's `data.json`.
+transcript, and configured summary instructions to the AI endpoint you configured. Other vault
+notes and unrelated vault content are not sent. API keys are referenced through Obsidian
+SecretStorage rather than stored in the plugin's `data.json`.
+
+The hidden metadata marker used for repeatable frontmatter migrations contains video and playlist
+metadata plus AI provider/model status. It never contains transcripts, summary text, credentials,
+or API keys.
 
 ## Development
 
 ```bash
 npm install
 npm run typecheck   # type check only
+npm test            # unit tests
+npm run check       # type check + unit tests
 npm run build       # type check + bundle main.js
 node test/smoke.mjs <playlistId>   # end-to-end check of the YouTube fetch layer
 ```

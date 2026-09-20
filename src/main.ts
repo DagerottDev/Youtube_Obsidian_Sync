@@ -1,12 +1,10 @@
-import { Notice, Platform, Plugin, TFile, TFolder, normalizePath } from 'obsidian';
+import { App, Modal, Notice, Platform, Plugin, Setting, TFile, TFolder, normalizePath, parseYaml, stringifyYaml } from 'obsidian';
 import {
-  AI_PROVIDER_DEFAULTS,
   DEFAULT_SETTINGS,
+  DEFAULT_VIDEO_FRONTMATTER_TEMPLATE,
   providerDisplayName,
   resolvedAIEndpoint,
   resolvedAIModel,
-  type AIProtocol,
-  type AIProviderPreset,
   type PlaylistSyncResult,
   type TranscriptLine,
   type VideoMetadata,
@@ -28,91 +26,75 @@ import { YouTubePlaylistSyncSettingTab } from './settings';
 import { OpenAICompatibleProvider } from './ai/openai';
 import type { AIProvider } from './ai/types';
 import {
+  applyAISummaryBlockToNote,
   applyAISummaryToNote,
   extractChannelFromNote,
   extractTitleFromNote,
   extractTranscriptFromNote,
   hasAISummary,
 } from './ai/noteUpdater';
+import {
+  createVideoMetadataRecord,
+  extractVideoMetadataRecord,
+  validateVideoTemplate,
+  VIDEO_METADATA_MARKER_PREFIX,
+} from './frontmatter';
+import {
+  recordForVideoNote,
+  rewriteVideoNoteFrontmatter,
+  type RewrittenVideoNote,
+} from './noteFrontmatter';
+import { normalizeSettings } from './settingsModel';
 
 const PLAYLIST_ID_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
-const VIDEO_ID_FRONTMATTER_REGEX = /^videoId:\s*"?([^"\s]+)"?/m;
-const SOURCE_FRONTMATTER_REGEX = /^source:\s*youtube\b/m;
-const AI_PROVIDERS = new Set<AIProviderPreset>(['openai', 'nvidia-nim', 'custom']);
-const AI_PROTOCOLS = new Set<AIProtocol>(['responses', 'chat-completions']);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+const VIDEO_ID_FRONTMATTER_REGEX = /^videoId:\s*["']?([^"'\s]+)["']?\s*$/m;
+const SOURCE_FRONTMATTER_REGEX = /^source:\s*["']?youtube["']?\s*$/m;
+interface MigrationCandidate {
+  file: TFile;
+  preview: RewrittenVideoNote;
 }
 
-function isPlaylist(value: unknown): value is { url: string } {
-  return isRecord(value) && typeof value.url === 'string';
-}
+class MigrationPreviewModal extends Modal {
+  private settled = false;
 
-function normalizeSettings(value: unknown): YouTubePlaylistSyncSettings {
-  const stored = isRecord(value) ? value : {};
-  const playlists = Array.isArray(stored.playlists)
-    ? stored.playlists.filter(isPlaylist).map((playlist) => ({ url: playlist.url }))
-    : [];
-
-  const aiProvider = typeof stored.aiProvider === 'string' && AI_PROVIDERS.has(stored.aiProvider as AIProviderPreset)
-    ? stored.aiProvider as AIProviderPreset
-    : DEFAULT_SETTINGS.aiProvider;
-  const providerDefaults = AI_PROVIDER_DEFAULTS[aiProvider];
-  const aiProtocol = typeof stored.aiProtocol === 'string' && AI_PROTOCOLS.has(stored.aiProtocol as AIProtocol)
-    ? stored.aiProtocol as AIProtocol
-    : providerDefaults.protocol;
-
-  // Migrate the previous curated-model format where aiModel could be "custom" and aiCustomModel held the ID.
-  let aiModel = providerDefaults.model;
-  if (typeof stored.aiModel === 'string') {
-    if (stored.aiModel === 'custom') {
-      if (typeof stored.aiCustomModel === 'string' && stored.aiCustomModel.trim()) {
-        aiModel = stored.aiCustomModel.trim();
-      }
-    } else if (stored.aiModel.trim()) {
-      aiModel = stored.aiModel.trim();
-    }
+  constructor(
+    app: App,
+    private readonly matched: number,
+    private readonly skipped: number,
+    private readonly preview: RewrittenVideoNote,
+    private readonly resolveChoice: (confirmed: boolean) => void,
+  ) {
+    super(app);
   }
 
-  return {
-    playlists,
-    syncOnStartup: typeof stored.syncOnStartup === 'boolean'
-      ? stored.syncOnStartup
-      : DEFAULT_SETTINGS.syncOnStartup,
-    syncIntervalMinutes: typeof stored.syncIntervalMinutes === 'number'
-      && Number.isFinite(stored.syncIntervalMinutes)
-      && stored.syncIntervalMinutes >= 0
-      ? Math.floor(stored.syncIntervalMinutes)
-      : DEFAULT_SETTINGS.syncIntervalMinutes,
-    baseFolder: typeof stored.baseFolder === 'string' && stored.baseFolder.trim()
-      ? stored.baseFolder
-      : DEFAULT_SETTINGS.baseFolder,
-    createIndexNote: typeof stored.createIndexNote === 'boolean'
-      ? stored.createIndexNote
-      : DEFAULT_SETTINGS.createIndexNote,
-    transcriptMode: stored.transcriptMode === 'timestamped' ? 'timestamped' : 'readable',
-    preferredLanguage: typeof stored.preferredLanguage === 'string'
-      ? stored.preferredLanguage
-      : DEFAULT_SETTINGS.preferredLanguage,
-    extraTags: typeof stored.extraTags === 'string' ? stored.extraTags : DEFAULT_SETTINGS.extraTags,
-    mediaEmbed: stored.mediaEmbed === 'thumbnail' || stored.mediaEmbed === 'off'
-      ? stored.mediaEmbed
-      : 'video',
-    aiEnabled: typeof stored.aiEnabled === 'boolean' ? stored.aiEnabled : DEFAULT_SETTINGS.aiEnabled,
-    aiAutoGenerate: typeof stored.aiAutoGenerate === 'boolean'
-      ? stored.aiAutoGenerate
-      : DEFAULT_SETTINGS.aiAutoGenerate,
-    aiProvider,
-    aiEndpoint: typeof stored.aiEndpoint === 'string' && stored.aiEndpoint.trim()
-      ? stored.aiEndpoint.trim()
-      : providerDefaults.endpoint,
-    aiProtocol,
-    aiApiKeySecret: typeof stored.aiApiKeySecret === 'string'
-      ? stored.aiApiKeySecret
-      : DEFAULT_SETTINGS.aiApiKeySecret,
-    aiModel,
-  };
+  onOpen(): void {
+    this.setTitle('Apply video frontmatter template');
+    this.contentEl.createEl('p', {
+      text: `${this.matched} video note${this.matched === 1 ? '' : 's'} matched; ${this.skipped} skipped.`,
+    });
+    this.contentEl.createEl('p', {
+      text: 'Only frontmatter and the hidden plugin metadata marker will change. YAML formatting and comments may be normalized.',
+      cls: 'setting-item-description',
+    });
+    this.contentEl.createEl('h3', { text: 'Before (first matched note)' });
+    this.contentEl.createEl('pre', { text: this.preview.beforeYaml });
+    this.contentEl.createEl('h3', { text: 'After' });
+    this.contentEl.createEl('pre', { text: this.preview.afterYaml });
+    new Setting(this.contentEl)
+      .addButton((button) => button.setButtonText('Cancel').onClick(() => this.finish(false)))
+      .addButton((button) => button.setButtonText('Apply migration').setCta().onClick(() => this.finish(true)));
+  }
+
+  onClose(): void {
+    if (!this.settled) this.finish(false);
+  }
+
+  private finish(confirmed: boolean): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolveChoice(confirmed);
+    this.close();
+  }
 }
 
 export default class YouTubePlaylistSyncPlugin extends Plugin {
@@ -121,6 +103,7 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
   private isAISummarizing = false;
   private lastSyncAt = 0;
   private statusBarEl?: HTMLElement;
+  private warnedAboutInvalidTemplate = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -158,6 +141,14 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       name: 'Generate missing AI summaries',
       callback: () => {
         void this.generateMissingSummaries();
+      },
+    });
+
+    this.addCommand({
+      id: 'apply-video-frontmatter-template',
+      name: 'Apply frontmatter template to existing YouTube notes',
+      callback: () => {
+        void this.previewAndApplyFrontmatterMigration();
       },
     });
 
@@ -270,6 +261,7 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     let skipped = 0;
     let failed = 0;
     let autoAIProvider: AIProvider | null = null;
+    const videoTemplate = this.videoTemplateForSync();
 
     if (this.settings.aiEnabled && this.settings.aiAutoGenerate) {
       try {
@@ -292,6 +284,8 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
           { name, url, id: playlistId },
           transcript,
           this.settings,
+          parseYaml,
+          videoTemplate,
         );
         const path = await this.uniqueNotePath(folder, meta.title || entry.title);
         const file = await this.app.vault.create(path, content);
@@ -420,6 +414,110 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     new Notice(`AI summaries: ${succeeded} generated${failed ? `, ${failed} failed` : ''}.`);
   }
 
+  async previewAndApplyFrontmatterMigration(): Promise<void> {
+    try {
+      validateVideoTemplate(this.settings.videoFrontmatterTemplate, parseYaml);
+    } catch (error) {
+      new Notice(`Frontmatter migration unavailable: ${this.userFacingError(error)}`);
+      return;
+    }
+
+    const base = normalizePath(this.settings.baseFolder);
+    const prefix = base.endsWith('/') ? base : `${base}/`;
+    const candidates: MigrationCandidate[] = [];
+    let skipped = 0;
+
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!file.path.startsWith(prefix)) continue;
+      let content: string;
+      try {
+        content = await this.app.vault.read(file);
+      } catch (error) {
+        skipped += 1;
+        console.warn(`YouTube Sync: could not read ${file.path} for frontmatter migration`, error);
+        continue;
+      }
+      const head = content.slice(0, 4000);
+      const looksLikeVideoNote = content.includes(VIDEO_METADATA_MARKER_PREFIX)
+        || (SOURCE_FRONTMATTER_REGEX.test(head) && VIDEO_ID_FRONTMATTER_REGEX.test(head));
+      if (!looksLikeVideoNote) continue;
+      if (content.includes(VIDEO_METADATA_MARKER_PREFIX) && !extractVideoMetadataRecord(content)) {
+        skipped += 1;
+        console.warn(`YouTube Sync: skipped ${file.path} because its metadata marker is invalid.`);
+        continue;
+      }
+      try {
+        const record = recordForVideoNote(
+          content,
+          extractTitleFromNote(content) ?? file.basename,
+          hasAISummary(content),
+          parseYaml,
+        );
+        if (!record) {
+          skipped += 1;
+          continue;
+        }
+        candidates.push({
+          file,
+          preview: rewriteVideoNoteFrontmatter(
+            content,
+            record,
+            this.settings.videoFrontmatterTemplate,
+            parseYaml,
+            stringifyYaml,
+          ),
+        });
+      } catch (error) {
+        skipped += 1;
+        console.warn(`YouTube Sync: skipped ${file.path} during migration preview`, error);
+      }
+    }
+
+    if (!candidates.length) {
+      new Notice(`No generated video notes are available to migrate${skipped ? ` (${skipped} skipped)` : ''}.`);
+      return;
+    }
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      new MigrationPreviewModal(this.app, candidates.length, skipped, candidates[0].preview, resolve).open();
+    });
+    if (!confirmed) return;
+
+    let changed = 0;
+    let unchanged = 0;
+    let failed = 0;
+    for (const candidate of candidates) {
+      let fileChanged = false;
+      try {
+        await this.app.vault.process(candidate.file, (current) => {
+          const record = recordForVideoNote(
+            current,
+            extractTitleFromNote(current) ?? candidate.file.basename,
+            hasAISummary(current),
+            parseYaml,
+          );
+          if (!record) throw new Error('The note is no longer a valid generated YouTube video note.');
+          const rewritten = rewriteVideoNoteFrontmatter(
+            current,
+            record,
+            this.settings.videoFrontmatterTemplate,
+            parseYaml,
+            stringifyYaml,
+          );
+          fileChanged = rewritten.changed;
+          return rewritten.content;
+        });
+        if (fileChanged) changed += 1;
+        else unchanged += 1;
+      } catch (error) {
+        failed += 1;
+        console.warn(`YouTube Sync: frontmatter migration failed for ${candidate.file.path}`, error);
+      }
+    }
+
+    new Notice(`Frontmatter migration: ${changed} changed, ${unchanged} unchanged${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}.`);
+  }
+
   private createAIProvider(): AIProvider {
     if (!this.settings.aiEnabled) throw new Error('AI summaries are disabled.');
 
@@ -427,6 +525,9 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     if (!endpoint) throw new Error('AI endpoint is not configured.');
     const model = resolvedAIModel(this.settings);
     if (!model) throw new Error('AI model is not configured.');
+    if (this.settings.aiPromptMode === 'replace' && !this.settings.aiCustomPrompt.trim()) {
+      throw new Error('Enter custom AI instructions or switch prompt mode.');
+    }
 
     const displayName = providerDisplayName(this.settings.aiProvider);
     const secretName = this.settings.aiApiKeySecret.trim();
@@ -444,6 +545,8 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       baseUrl: endpoint,
       model,
       protocol: this.settings.aiProtocol,
+      promptMode: this.settings.aiPromptMode,
+      customPrompt: this.settings.aiCustomPrompt,
       ...(token ? { auth: { type: 'api-key' as const, token } } : {}),
     });
   }
@@ -458,9 +561,10 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       throw new Error('The current file is not a YouTube note generated by this plugin.');
     }
 
+    const storedMetadata = extractVideoMetadataRecord(content);
     const input = provided ?? {
-      title: extractTitleFromNote(content) ?? file.basename,
-      channel: extractChannelFromNote(content),
+      title: storedMetadata?.values.title ?? extractTitleFromNote(content) ?? file.basename,
+      channel: storedMetadata?.values.channel ?? extractChannelFromNote(content),
       transcript: extractTranscriptFromNote(content) ?? '',
     };
     if (!input.transcript.trim()) throw new Error('This note does not contain a transcript to summarize.');
@@ -468,7 +572,29 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     const provider = existingProvider ?? this.createAIProvider();
     const summary = await provider.summarize(input);
     const latestContent = await this.app.vault.read(file);
-    const updated = applyAISummaryToNote(latestContent, summary, provider.id, provider.model);
+    const metadata = extractVideoMetadataRecord(latestContent);
+    let updated: string;
+    if (metadata) {
+      const generatedAt = new Date().toISOString();
+      const withSummary = applyAISummaryBlockToNote(latestContent, summary);
+      const nextMetadata = createVideoMetadataRecord({
+        ...metadata.values,
+        aiSummary: true,
+        aiProvider: provider.id,
+        aiModel: provider.model,
+        aiGenerated: generatedAt,
+      }, metadata.managedKeys, metadata.template);
+      const noteTemplate = metadata.template ?? this.videoTemplateForSync();
+      updated = rewriteVideoNoteFrontmatter(
+        withSummary,
+        nextMetadata,
+        noteTemplate,
+        parseYaml,
+        stringifyYaml,
+      ).content;
+    } else {
+      updated = applyAISummaryToNote(latestContent, summary, provider.id, provider.model);
+    }
     await this.app.vault.modify(file, updated);
   }
 
@@ -484,6 +610,20 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
 
   private userFacingError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  private videoTemplateForSync(): string {
+    try {
+      validateVideoTemplate(this.settings.videoFrontmatterTemplate, parseYaml);
+      return this.settings.videoFrontmatterTemplate;
+    } catch (error) {
+      if (!this.warnedAboutInvalidTemplate) {
+        this.warnedAboutInvalidTemplate = true;
+        console.warn('YouTube Sync: invalid frontmatter template; using the default template', error);
+        new Notice(`Invalid video frontmatter template; using the default. ${this.userFacingError(error)}`);
+      }
+      return DEFAULT_VIDEO_FRONTMATTER_TEMPLATE;
+    }
   }
 
   private async scanSyncedVideoIds(folder: string): Promise<Set<string>> {

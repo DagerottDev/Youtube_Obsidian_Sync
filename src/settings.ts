@@ -1,8 +1,34 @@
-import { App, Notice, PluginSettingTab, SecretComponent, Setting } from 'obsidian';
+import { App, Modal, Notice, parseYaml, PluginSettingTab, SecretComponent, Setting } from 'obsidian';
 import type YouTubePlaylistSyncPlugin from './main';
-import { AI_PROVIDER_DEFAULTS, providerDisplayName, type AIProtocol, type AIProviderPreset } from './types';
+import {
+  AI_PROVIDER_DEFAULTS,
+  DEFAULT_VIDEO_FRONTMATTER_TEMPLATE,
+  providerDisplayName,
+  type AIPromptMode,
+  type AIProtocol,
+  type AIProviderPreset,
+} from './types';
+import { previewVideoTemplate, validateVideoTemplate } from './frontmatter';
 
 const PLAYLIST_URL_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
+
+function textInputRows(input: HTMLTextAreaElement, rows: number): void {
+  input.rows = rows;
+  input.style.width = '100%';
+  input.style.fontFamily = 'var(--font-monospace)';
+}
+
+class TextPreviewModal extends Modal {
+  constructor(app: App, private readonly title: string, private readonly text: string) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.setTitle(this.title);
+    this.contentEl.createEl('pre', { text: this.text });
+    new Setting(this.contentEl).addButton((button) => button.setButtonText('Close').onClick(() => this.close()));
+  }
+}
 
 export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
   plugin: YouTubePlaylistSyncPlugin;
@@ -190,8 +216,57 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
         }),
       );
 
+    new Setting(containerEl).setName('Video frontmatter template').setHeading()
+      .setDesc('Customize YAML properties for newly generated video notes. Do not include --- delimiters. Existing notes change only when you run the migration below.');
+
+    let templateDraft = this.plugin.settings.videoFrontmatterTemplate;
+    let templateInput: HTMLTextAreaElement;
+    new Setting(containerEl)
+      .setName('Template')
+      .setDesc('Available placeholders: title, aliases, source, channel, channelUrl, channelId, videoUrl, videoId, playlistUrl, playlistId, thumbnailUrl, videoDescription, uploadDate, videoCategory, durationSeconds, keywords, generated, tags, aiSummary, aiProvider, aiModel, aiGenerated. Missing optional values remove their line.')
+      .addTextArea((text) => {
+        templateInput = text.inputEl;
+        textInputRows(text.inputEl, 18);
+        text.setValue(templateDraft).onChange((value) => {
+          templateDraft = value;
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Template actions')
+      .setDesc('Validate before saving. Preview uses sample metadata and never modifies notes.')
+      .addButton((button) => button.setButtonText('Validate and save').setCta().onClick(() => {
+        try {
+          validateVideoTemplate(templateDraft, parseYaml);
+          this.plugin.settings.videoFrontmatterTemplate = templateDraft;
+          void this.plugin.saveSettings().then(() => new Notice('Video frontmatter template saved.'));
+        } catch (error) {
+          new Notice(`Frontmatter template error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }))
+      .addButton((button) => button.setButtonText('Preview').onClick(() => {
+        try {
+          new TextPreviewModal(this.app, 'Frontmatter template preview', previewVideoTemplate(templateDraft, parseYaml)).open();
+        } catch (error) {
+          new Notice(`Frontmatter template error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }))
+      .addButton((button) => button.setButtonText('Reset default').onClick(() => {
+        templateDraft = DEFAULT_VIDEO_FRONTMATTER_TEMPLATE;
+        templateInput.value = templateDraft;
+        this.plugin.settings.videoFrontmatterTemplate = templateDraft;
+        void this.plugin.saveSettings().then(() => new Notice('Default frontmatter template restored.'));
+      }));
+
+    new Setting(containerEl)
+      .setName('Apply template to existing notes')
+      .setDesc('Preview and migrate generated video notes in the base folder. Note bodies and unknown frontmatter properties are preserved.')
+      .addButton((button) => button.setButtonText('Preview migration').onClick(() => {
+        void this.plugin.previewAndApplyFrontmatterMigration();
+      }));
+
     new Setting(containerEl).setName('AI summaries').setHeading()
-      .setDesc('Optional. Use OpenAI, NVIDIA NIM, or another OpenAI-compatible endpoint. Only the video title, channel, and transcript are sent.');
+      .setDesc('Optional. Use OpenAI, NVIDIA NIM, or another OpenAI-compatible endpoint. Only the video title, channel, transcript, and configured summary instructions are sent.');
 
     new Setting(containerEl)
       .setName('Enable AI summaries')
@@ -280,6 +355,38 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
             void this.plugin.saveSettings();
           }),
       );
+
+    new Setting(containerEl)
+      .setName('AI prompt mode')
+      .setDesc('Default uses the built-in guidance. Append adds your instructions. Replace is an advanced mode that replaces the guidance while retaining the required JSON response contract.')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('default', 'Default guidance')
+          .addOption('append', 'Append custom instructions')
+          .addOption('replace', 'Replace guidance (advanced)')
+          .setValue(this.plugin.settings.aiPromptMode)
+          .onChange((value) => {
+            this.plugin.settings.aiPromptMode = value as AIPromptMode;
+            void this.plugin.saveSettings().then(() => this.display());
+          }),
+      );
+
+    if (this.plugin.settings.aiPromptMode !== 'default') {
+      new Setting(containerEl)
+        .setName('Custom AI instructions')
+        .setDesc('Control focus, tone, and level of detail. The title, channel, and transcript are supplied separately, and the summary output sections remain fixed.')
+        .addTextArea((text) => {
+          textInputRows(text.inputEl, 8);
+          text.setValue(this.plugin.settings.aiCustomPrompt).onChange((value) => {
+            this.plugin.settings.aiCustomPrompt = value;
+            void this.plugin.saveSettings();
+          });
+        })
+        .addButton((button) => button.setButtonText('Clear').onClick(() => {
+          this.plugin.settings.aiCustomPrompt = '';
+          void this.plugin.saveSettings().then(() => this.display());
+        }));
+    }
 
     new Setting(containerEl)
       .setName('Reset provider defaults')
