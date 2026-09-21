@@ -30,6 +30,22 @@ function chatResult() {
   };
 }
 
+function invalidResponsesResult() {
+  return {
+    status: 200,
+    json: {
+      output: [{
+        type: 'message',
+        content: [{
+          type: 'output_text',
+          text: JSON.stringify({ ...summary, keyTakeaways: ['valid', 42] }),
+        }],
+      }],
+    },
+    text: '',
+  };
+}
+
 describe('OpenAICompatibleProvider prompt modes', () => {
   beforeEach(() => mocks.requestUrl.mockReset());
 
@@ -84,5 +100,18 @@ describe('OpenAICompatibleProvider prompt modes', () => {
       const body = JSON.parse(request.body);
       expect(body.input[0].content).toContain('Prioritize code examples.');
     }
+  });
+
+  it('rejects summary arrays that contain non-string values', async () => {
+    mocks.requestUrl.mockResolvedValue(invalidResponsesResult());
+    const provider = new OpenAICompatibleProvider({
+      id: 'openai',
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model',
+      protocol: 'responses',
+      auth: { type: 'api-key', token: 'secret' },
+    });
+    await expect(provider.summarize({ title: 'Title', transcript: 'Transcript' }))
+      .rejects.toThrow('invalid summary payload');
   });
 });

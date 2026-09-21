@@ -57,8 +57,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function stringArray(value: unknown): string[] | null {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) return null;
-  return value.map((item) => item.trim()).filter(Boolean);
+  if (!Array.isArray(value)) return null;
+  const strings = value.filter((item): item is string => typeof item === 'string');
+  if (strings.length !== value.length) return null;
+  return strings.map((item) => item.trim()).filter(Boolean);
 }
 
 function stripCodeFence(text: string): string {

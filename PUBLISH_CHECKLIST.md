@@ -58,8 +58,11 @@ The live community scorecard is currently **Excellent** for health and **Satisfa
 It reports no vulnerable dependencies or suspicious network patterns, and it reports 55 installs.
 The next engineering pass should address these non-blocking findings:
 
+- [x] Narrow the unsafe AI summary-array mapping in `src/ai/openai.ts`; add regression coverage in
+  `test/openai.test.ts`.
 - [ ] Migrate the settings tab to Obsidian's declarative `getSettingDefinitions()` API while
   retaining compatibility with the current minimum Obsidian version.
 - [ ] Review the two typed-error warnings in the latest scorecard and narrow any remaining
   `unknown`/error paths where that improves safety without hiding useful diagnostics.
-- [ ] Re-run the scorecard after the settings migration and a supported Node LTS production build.
+- [ ] Publish a patch release containing the source fix after a supported Node LTS production build.
+- [ ] Re-run the scorecard after the settings migration and patch release.
