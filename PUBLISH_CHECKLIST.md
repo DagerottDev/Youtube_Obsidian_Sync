@@ -30,7 +30,8 @@ Current published release: **0.3.1** (`1e09733`)
 
 ## After approval
 
-- [ ] Verify installation from **Settings → Community plugins → Browse**.
+- [x] Verify installation from **Settings → Community plugins → Browse** in the local E2E vault;
+  the directory search showed **YouTube Playlist Sync — INSTALLED — v0.3.1**.
 - [ ] Announce the first public release in the Obsidian forum and Discord updates channel.
 
 ## Promotion status

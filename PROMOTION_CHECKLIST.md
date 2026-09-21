@@ -65,7 +65,8 @@ example before posting, and use the links below as the canonical destinations.
 - [ ] Obsidian Roundup form submission (site unavailable during this run).
 - [ ] Three user reviews and five creator messages.
 - [ ] Three-minute narrated demo plus vertical derivatives for Shorts/Reels/TikTok.
-- [ ] Verify installation from Obsidian’s Browse view.
+- [x] Verify installation from Obsidian’s Browse view: the plugin appears as **INSTALLED** at
+  version `0.3.1` in the local E2E vault.
 
 Do not claim that the short walkthrough is a narrated demo: it is a compact screenshot-based visual
 for sharing while a full recording is pending.
