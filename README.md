@@ -69,6 +69,10 @@ The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
 
 ![Playlist index](assets/screenshots/playlist-index.webp)
 
+### Visual walkthrough
+
+![YouTube Playlist Sync walkthrough](assets/screenshots/playlist-sync-walkthrough.gif)
+
 ## Integrates well with
 
 - **Dataview:** query the generated frontmatter to build dashboards for channels, playlists, tags, and upload dates.
