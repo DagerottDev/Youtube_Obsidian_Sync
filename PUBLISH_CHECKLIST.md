@@ -23,6 +23,9 @@ Current published release: **0.3.1** (`1e09733`)
 - [x] Make `DagerottDev/Youtube_Obsidian_Sync` public on GitHub.
 - [x] Create GitHub release `0.3.1` with `main.js` and `manifest.json` attached.
 - [x] Generate and verify GitHub artifact attestations for the release assets.
+- [x] GitHub Actions verified `npm run check` and `npm run build` on Node 20 for the 0.3.2 patch.
+- [x] Prepare the 0.3.2 release draft with `main.js` and `manifest.json` assets.
+- [ ] Publish the 0.3.2 release publicly and wait for its asset attestations.
 - [x] Sign in to the Obsidian Community directory.
 - [x] Link the GitHub account that owns the repository to the Obsidian account.
 - [x] Add **YouTube Playlist Sync** in the directory.
