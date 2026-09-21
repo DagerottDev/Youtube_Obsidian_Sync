@@ -1,6 +1,6 @@
 {
   "name": "youtube-playlist-sync",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Automatically sync public YouTube playlists into Obsidian notes with full metadata and transcripts.",
   "main": "main.js",
   "homepage": "https://obsidian.md/plugins?id=youtube-playlist-sync",

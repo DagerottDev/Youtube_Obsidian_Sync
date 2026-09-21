@@ -22,6 +22,8 @@ The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
   preview or migrate existing generated notes without changing their bodies.
 - **Timestamped summary fix:** Manual and bulk AI summaries now strip the plugin's timestamp links
   before sending transcript text to the selected provider.
+- **Safer AI response parsing:** Malformed summary arrays are rejected instead of being processed
+  as untyped values.
 
 ## Features
 
