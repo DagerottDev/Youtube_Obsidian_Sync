@@ -323,6 +323,9 @@ node test/smoke.mjs <playlistId>   # end-to-end check of the YouTube fetch layer
 The YouTube fetch layer lives in `src/youtube.ts`, note rendering in `src/noteRenderer.ts`, sync
 orchestration in `src/main.ts`, and AI integration in `src/ai/`.
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, tests, smoke checks, and pull
+request expectations.
+
 ## Support
 
 If this plugin saves you time, you can support its development:

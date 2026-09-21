@@ -16,6 +16,7 @@ Current published release: **0.3.1** (`1e09733`)
   before producing output; rerun `npm run build` under a supported Node LTS runtime.
 - [ ] YouTube fetch smoke test rerun against a live playlist.
 - [x] Support links are present in `README.md`, `.github/FUNDING.yml`, and `manifest.json`.
+- [x] `CONTRIBUTING.md` documents setup, checks, smoke testing, and pull request expectations.
 
 ## External publication gates
 
@@ -50,3 +51,15 @@ Current published release: **0.3.1** (`1e09733`)
 
 The active Awesome Obsidian repository currently states that plugin entries are not accepted, so
 no PR was opened there. Recheck its contribution policy before attempting a future submission.
+
+## Scorecard feedback backlog
+
+The live community scorecard is currently **Excellent** for health and **Satisfactory** for review.
+It reports no vulnerable dependencies or suspicious network patterns, and it reports 55 installs.
+The next engineering pass should address these non-blocking findings:
+
+- [ ] Migrate the settings tab to Obsidian's declarative `getSettingDefinitions()` API while
+  retaining compatibility with the current minimum Obsidian version.
+- [ ] Review the two typed-error warnings in the latest scorecard and narrow any remaining
+  `unknown`/error paths where that improves safety without hiding useful diagnostics.
+- [ ] Re-run the scorecard after the settings migration and a supported Node LTS production build.
