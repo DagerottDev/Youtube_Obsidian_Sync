@@ -8,6 +8,12 @@ OpenAI-compatible endpoint chosen by the user.
 
 The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
 
+## Why this plugin?
+
+- **No YouTube API key:** sync public playlists through the same public data path used by YouTube.
+- **Automatic, incremental sync:** create notes for new videos on startup, on an interval, or on demand while preserving your edits.
+- **AI is optional:** keep transcripts and metadata local, or add summaries with OpenAI, NVIDIA NIM, or another OpenAI-compatible endpoint when you choose.
+
 ## What's new
 
 - **Custom AI instructions:** Keep the built-in summary prompt, append your own guidance, or
@@ -62,6 +68,13 @@ The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
 ### Playlist index with linked notes
 
 ![Playlist index](assets/screenshots/playlist-index.webp)
+
+## Integrates well with
+
+- **Dataview:** query the generated frontmatter to build dashboards for channels, playlists, tags, and upload dates.
+- **Templater:** use the stable video-note properties as inputs for your own note templates and workflows.
+- **QuickAdd:** connect Obsidian commands and capture flows around a repeatable playlist-sync workflow.
+- **Excalidraw:** link generated video notes from visual maps, lesson plans, and research diagrams.
 
 ## Install
 
