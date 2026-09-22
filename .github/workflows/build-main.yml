@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/build-main.yml'
       - 'src/**'
       - 'test/**'
       - 'package.json'
@@ -11,6 +12,7 @@ on:
       - 'esbuild.config.mjs'
       - 'tsconfig.json'
       - 'vitest.config.ts'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -25,7 +27,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies

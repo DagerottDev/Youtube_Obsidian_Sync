@@ -1,4 +1,16 @@
-import { App, Modal, Notice, parseYaml, PluginSettingTab, SecretComponent, Setting } from 'obsidian';
+import {
+  App,
+  Modal,
+  Notice,
+  parseYaml,
+  PluginSettingTab,
+  SecretComponent,
+  Setting,
+  type SettingDefinitionControl,
+  type SettingDefinitionGroup,
+  type SettingDefinitionItem,
+  type SettingDefinitionRender,
+} from 'obsidian';
 import type YouTubePlaylistSyncPlugin from './main';
 import {
   AI_PROVIDER_DEFAULTS,
@@ -34,10 +46,315 @@ class TextPreviewModal extends Modal {
 
 export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
   plugin: YouTubePlaylistSyncPlugin;
+  private templateDraft?: string;
 
   constructor(app: App, plugin: YouTubePlaylistSyncPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    const row = (
+      name: string,
+      desc: string,
+      render: (setting: Setting) => void,
+      visible?: () => boolean,
+    ): SettingDefinitionRender => ({
+      name,
+      desc,
+      ...(visible ? { visible } : {}),
+      render: (setting) => {
+        setting.setName(name).setDesc(desc);
+        render(setting);
+      },
+    });
+    const group = (
+      heading: string,
+      items: (SettingDefinitionControl | SettingDefinitionRender)[],
+    ): SettingDefinitionGroup => ({ type: 'group', heading, items });
+    const control = (
+      name: string,
+      desc: string,
+      definition: SettingDefinitionControl['control'],
+    ): SettingDefinitionControl => ({ name, desc, control: definition });
+
+    let templateDraft = this.templateDraft ?? this.plugin.settings.videoFrontmatterTemplate;
+    const provider = this.plugin.settings.aiProvider;
+    const customEndpoint = provider === 'custom';
+
+    return [
+      group('Playlists', [
+        row(
+          'Configured playlists',
+          'Public YouTube playlist URLs to sync. Only new videos are turned into notes; existing notes are preserved.',
+          (setting) => {
+            const listEl = setting.controlEl.createDiv();
+            const renderList = () => {
+              listEl.empty();
+              const { playlists } = this.plugin.settings;
+              if (!playlists.length) {
+                listEl.createEl('p', { text: 'No playlists configured yet.', cls: 'setting-item-description' });
+              }
+              playlists.forEach((playlist, index) => {
+                new Setting(listEl)
+                  .setName(playlist.url)
+                  .addButton((button) => button.setButtonText('Remove').onClick(() => {
+                    void this.removePlaylist(index).then(() => this.refreshSettingsTab());
+                  }));
+              });
+            };
+            renderList();
+          },
+        ),
+        row(
+          'Add playlist',
+          'Paste a YouTube playlist URL, e.g. https://www.youtube.com/playlist?list=PL...',
+          (setting) => {
+            let inputEl: HTMLInputElement;
+            setting.addText((text) => {
+              inputEl = text.inputEl;
+              text.setPlaceholder('https://www.youtube.com/playlist?list=...');
+            });
+            setting.addButton((button) => button.setButtonText('Add').setCta().onClick(() => {
+              void this.addPlaylist(inputEl.value).then((added) => {
+                if (added) this.refreshSettingsTab();
+              });
+            }));
+          },
+        ),
+      ]),
+      group('Sync', [
+        control('Sync when Obsidian opens', 'Automatically sync all playlists shortly after Obsidian starts.', {
+          type: 'toggle', key: 'syncOnStartup',
+        }),
+        control('Sync interval (minutes)', 'Re-sync every N minutes while Obsidian is active. Set to 0 to disable. Mobile checks again when the app resumes.', {
+          type: 'number', key: 'syncIntervalMinutes', min: 0, step: 1,
+        }),
+        row('Sync now', '', (setting) => {
+          setting.addButton((button) => button.setButtonText('Sync now').setCta().onClick(() => {
+            void this.plugin.syncAll();
+          }));
+        }),
+      ]),
+      group('Note output', [
+        control('Base folder', 'Folder inside the vault where playlists are written (one subfolder per playlist).', {
+          type: 'text', key: 'baseFolder', placeholder: 'YouTube',
+        }),
+        control('Create index notes', 'Maintain an index note per playlist (table of videos) plus a root index.', {
+          type: 'toggle', key: 'createIndexNote',
+        }),
+        control('Transcript format', '', {
+          type: 'dropdown', key: 'transcriptMode', options: {
+            readable: 'Readable paragraphs',
+            timestamped: 'Timestamped lines',
+          },
+        }),
+        control('Preferred caption language', 'Language code such as "en". Leave empty to use the first available transcript.', {
+          type: 'text', key: 'preferredLanguage', placeholder: 'en',
+        }),
+        control('Media embed', '', {
+          type: 'dropdown', key: 'mediaEmbed', options: {
+            video: 'YouTube video embed',
+            thumbnail: 'Thumbnail image',
+            off: 'None',
+          },
+        }),
+        control('Tags', 'Extra tags added to every generated note (space or comma separated).', {
+          type: 'text', key: 'extraTags',
+        }),
+      ]),
+      group('Video frontmatter template', [
+        row(
+          'Template',
+          'Available placeholders: title, aliases, source, channel, channelUrl, channelId, videoUrl, videoId, playlistUrl, playlistId, thumbnailUrl, videoDescription, uploadDate, videoCategory, durationSeconds, keywords, generated, tags, aiSummary, aiProvider, aiModel, aiGenerated. Missing optional values remove their line.',
+          (setting) => setting.addTextArea((text) => {
+            textInputRows(text.inputEl, 18);
+            text.setValue(templateDraft).onChange((value) => {
+              templateDraft = value;
+              this.templateDraft = value;
+            });
+          }),
+        ),
+        row(
+          'Validate and save',
+          'Validate the YAML template and save it for newly generated notes.',
+          (setting) => setting.addButton((button) => button.setButtonText('Validate and save').setCta().onClick(() => {
+            try {
+              validateVideoTemplate(templateDraft, parseYaml);
+              this.plugin.settings.videoFrontmatterTemplate = templateDraft;
+              void this.plugin.saveSettings().then(() => {
+                this.templateDraft = undefined;
+                new Notice('Video frontmatter template saved.');
+              });
+            } catch (error) {
+              new Notice(`Frontmatter template error: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          })),
+        ),
+        row(
+          'Preview',
+          'Preview with sample metadata; no notes are modified.',
+          (setting) => setting.addButton((button) => button.setButtonText('Preview').onClick(() => {
+            try {
+              new TextPreviewModal(this.app, 'Frontmatter template preview', previewVideoTemplate(templateDraft, parseYaml)).open();
+            } catch (error) {
+              new Notice(`Frontmatter template error: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          })),
+        ),
+        row(
+          'Reset default',
+          'Restore the built-in video frontmatter template.',
+          (setting) => setting.addButton((button) => button.setButtonText('Reset default').onClick(() => {
+            templateDraft = DEFAULT_VIDEO_FRONTMATTER_TEMPLATE;
+            this.templateDraft = templateDraft;
+            this.plugin.settings.videoFrontmatterTemplate = templateDraft;
+            void this.plugin.saveSettings().then(() => {
+              this.templateDraft = undefined;
+              new Notice('Default frontmatter template restored.');
+              this.refreshSettingsTab();
+            });
+          })),
+        ),
+        row(
+          'Preview migration',
+          'Preview and migrate generated video notes in the base folder. Note bodies and unknown frontmatter properties are preserved.',
+          (setting) => setting.addButton((button) => button.setButtonText('Preview migration').onClick(() => {
+            void this.plugin.previewAndApplyFrontmatterMigration();
+          })),
+        ),
+      ]),
+      group('AI summaries', [
+        control('Enable AI summaries', 'Enable AI summary commands and optional automatic summaries.', {
+          type: 'toggle', key: 'aiEnabled',
+        }),
+        control('AI provider', 'Presets fill in a recommended base URL, protocol, and starter model. Custom accepts any OpenAI-compatible endpoint.', {
+          type: 'dropdown', key: 'aiProvider', options: {
+            openai: 'OpenAI',
+            'nvidia-nim': 'NVIDIA NIM',
+            custom: 'Custom OpenAI-compatible endpoint',
+          },
+        }),
+        row(
+          'Authentication',
+          customEndpoint
+            ? 'API-key authentication is supported; the key may be left unset for a trusted local endpoint that requires no authentication. OpenAI OAuth is not currently available for third-party API usage.'
+            : 'API key via Obsidian SecretStorage. OpenAI OAuth / ChatGPT-plan authorization is not currently available for third-party API usage; the internal auth type is ready to add OAuth if a supported flow becomes available.',
+          () => {},
+        ),
+        row(
+          `${providerDisplayName(provider)} API key`,
+          customEndpoint
+            ? 'Optional for local or otherwise unauthenticated endpoints. When selected, the key is stored in Obsidian SecretStorage.'
+            : 'Required. Select or create a secret; the key is stored in Obsidian SecretStorage, not this plugin\'s data.json.',
+          (setting) => setting.addComponent((el) => new SecretComponent(this.app, el)
+            .setValue(this.plugin.settings.aiApiKeySecret)
+            .onChange((value) => {
+              this.plugin.settings.aiApiKeySecret = value;
+              void this.plugin.saveSettings();
+            })),
+        ),
+        control('API base URL', 'Base URL for an OpenAI-compatible API, normally ending in /v1. The selected API key is sent to this host, so only use endpoints you trust.', {
+          type: 'text', key: 'aiEndpoint', placeholder: 'https://provider.example.com/v1',
+        }),
+        control('API protocol', 'Responses API is preferred for OpenAI. Chat Completions is supported by a wider range of OpenAI-compatible providers.', {
+          type: 'dropdown', key: 'aiProtocol', options: {
+            responses: 'Responses API (/responses)',
+            'chat-completions': 'Chat Completions (/chat/completions)',
+          },
+        }),
+        control('Model ID', 'Enter any model ID available at the selected endpoint. The provider preset only supplies a starting value.', {
+          type: 'text', key: 'aiModel', placeholder: 'model-id',
+        }),
+        control('AI prompt mode', 'Default uses the built-in guidance. Append adds your instructions. Replace is an advanced mode that replaces the guidance while retaining the required JSON response contract.', {
+          type: 'dropdown', key: 'aiPromptMode', options: {
+            default: 'Default guidance',
+            append: 'Append custom instructions',
+            replace: 'Replace guidance (advanced)',
+          },
+        }),
+        row(
+          'Custom AI instructions',
+          'Control focus, tone, and level of detail. The title, channel, and transcript are supplied separately, and the summary output sections remain fixed.',
+          (setting) => {
+            setting.addTextArea((text) => {
+              textInputRows(text.inputEl, 8);
+              text.setValue(this.plugin.settings.aiCustomPrompt).onChange((value) => {
+                this.plugin.settings.aiCustomPrompt = value;
+                void this.plugin.saveSettings();
+              });
+            });
+            setting.addButton((button) => button.setButtonText('Clear').onClick(() => {
+              this.plugin.settings.aiCustomPrompt = '';
+              void this.plugin.saveSettings().then(() => this.refreshSettingsTab());
+            }));
+          },
+          () => this.plugin.settings.aiPromptMode !== 'default',
+        ),
+        row(
+          'Reset defaults',
+          'Restore the selected provider\'s default endpoint, protocol, and starter model without changing your saved secret.',
+          (setting) => setting.addButton((button) => button.setButtonText('Reset defaults').onClick(() => {
+            void this.selectAIProvider(this.plugin.settings.aiProvider, false);
+          })),
+        ),
+        control('Generate summaries automatically', 'After a new YouTube note is safely created, generate and insert its AI summary. AI failure never fails the YouTube sync.', {
+          type: 'toggle', key: 'aiAutoGenerate',
+        }),
+        row(
+          'Test connection',
+          'Validate the configured endpoint and authentication using its /models endpoint without sending a transcript.',
+          (setting) => setting.addButton((button) => button.setButtonText('Test connection').onClick(() => {
+            void this.plugin.testAIConnection();
+          })),
+        ),
+        row(
+          'Generate missing',
+          'Scan generated YouTube notes in the base folder and summarize notes that contain a transcript but no AI summary.',
+          (setting) => setting.addButton((button) => button.setButtonText('Generate missing').setCta().onClick(() => {
+            void this.plugin.generateMissingSummaries();
+          })),
+        ),
+      ]),
+    ];
+  }
+
+  getControlValue(key: string): unknown {
+    return (this.plugin.settings as unknown as Record<string, unknown>)[key];
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    if (key === 'aiProvider') {
+      if (value !== 'openai' && value !== 'nvidia-nim' && value !== 'custom') return;
+      await this.selectAIProvider(value, true);
+      return;
+    }
+
+    const settings = this.plugin.settings as unknown as Record<string, unknown>;
+    if (!(key in settings)) return;
+
+    let normalizedValue = value;
+    if (key === 'baseFolder') {
+      normalizedValue = typeof value === 'string'
+        ? value.trim().replace(/^\/+|\/+$/g, '') || 'YouTube'
+        : 'YouTube';
+    } else if (key === 'syncIntervalMinutes') {
+      const interval = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
+      normalizedValue = Number.isFinite(interval) && interval >= 0 ? Math.trunc(interval) : 0;
+    } else if (key === 'preferredLanguage') {
+      normalizedValue = typeof value === 'string' ? value.trim() : '';
+    } else if (key === 'aiEndpoint' || key === 'aiModel') {
+      normalizedValue = typeof value === 'string' ? value.trim() : '';
+    }
+
+    settings[key] = normalizedValue;
+    await this.plugin.saveSettings();
+    if (key === 'aiPromptMode') this.refreshSettingsTab();
+  }
+
+  private refreshSettingsTab(): void {
+    if (typeof this.update === 'function') this.update();
+    else this.display();
   }
 
   private async addPlaylist(url: string): Promise<boolean> {
@@ -69,7 +386,7 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
     this.plugin.settings.aiModel = defaults.model;
     if (clearSecret) this.plugin.settings.aiApiKeySecret = '';
     await this.plugin.saveSettings();
-    this.display();
+    this.refreshSettingsTab();
   }
 
   display(): void {
@@ -369,7 +686,7 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.aiPromptMode)
           .onChange((value) => {
             this.plugin.settings.aiPromptMode = value as AIPromptMode;
-            void this.plugin.saveSettings().then(() => this.display());
+            void this.plugin.saveSettings().then(() => this.refreshSettingsTab());
           }),
       );
 
@@ -386,7 +703,7 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
         })
         .addButton((button) => button.setButtonText('Clear').onClick(() => {
           this.plugin.settings.aiCustomPrompt = '';
-          void this.plugin.saveSettings().then(() => this.display());
+          void this.plugin.saveSettings().then(() => this.refreshSettingsTab());
         }));
     }
 

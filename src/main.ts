@@ -45,6 +45,7 @@ import {
   type RewrittenVideoNote,
 } from './noteFrontmatter';
 import { normalizeSettings } from './settingsModel';
+import { collectMarkdownFiles } from './vaultFiles';
 
 const PLAYLIST_ID_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
 const VIDEO_ID_FRONTMATTER_REGEX = /^videoId:\s*["']?([^"'\s]+)["']?\s*$/m;
@@ -376,10 +377,18 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     }
 
     const base = normalizePath(this.settings.baseFolder);
-    const prefix = base.endsWith('/') ? base : `${base}/`;
+    const baseFolder = this.app.vault.getAbstractFileByPath(base);
     const candidates: TFile[] = [];
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (!(file.path === `${base}/Index.md` || file.path.startsWith(prefix))) continue;
+    if (!(baseFolder instanceof TFolder)) {
+      new Notice('No YouTube notes are missing AI summaries.');
+      return;
+    }
+    const markdownFiles = collectMarkdownFiles(
+      baseFolder,
+      (entry): entry is TFolder => entry instanceof TFolder,
+      (entry): entry is TFile => entry instanceof TFile && entry.extension === 'md',
+    );
+    for (const file of markdownFiles) {
       const content = await this.app.vault.cachedRead(file);
       if (!SOURCE_FRONTMATTER_REGEX.test(content.slice(0, 4000))) continue;
       if (!extractTranscriptFromNote(content) || hasAISummary(content)) continue;
@@ -423,12 +432,20 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     }
 
     const base = normalizePath(this.settings.baseFolder);
-    const prefix = base.endsWith('/') ? base : `${base}/`;
+    const baseFolder = this.app.vault.getAbstractFileByPath(base);
     const candidates: MigrationCandidate[] = [];
     let skipped = 0;
 
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (!file.path.startsWith(prefix)) continue;
+    if (!(baseFolder instanceof TFolder)) {
+      new Notice('No YouTube video notes found in the base folder.');
+      return;
+    }
+    const markdownFiles = collectMarkdownFiles(
+      baseFolder,
+      (entry): entry is TFolder => entry instanceof TFolder,
+      (entry): entry is TFile => entry instanceof TFile && entry.extension === 'md',
+    );
+    for (const file of markdownFiles) {
       let content: string;
       try {
         content = await this.app.vault.read(file);
