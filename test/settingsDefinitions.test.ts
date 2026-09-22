@@ -107,6 +107,30 @@ describe('declarative plugin settings', () => {
     expect((customInstructions?.visible as () => boolean)()).toBe(true);
   });
 
+  it('refreshes declarative settings when the runtime provides an updater', () => {
+    const tab = makeTab();
+    const update = vi.fn();
+    const display = vi.fn();
+    Object.defineProperty(tab, 'update', { value: update });
+    Object.defineProperty(tab, 'display', { value: display });
+
+    (tab as unknown as { refreshSettingsTab(): void }).refreshSettingsTab();
+
+    expect(update).toHaveBeenCalledOnce();
+    expect(display).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the legacy display when the runtime has no declarative updater', () => {
+    const tab = makeTab();
+    const display = vi.fn();
+    Object.defineProperty(tab, 'update', { value: undefined });
+    Object.defineProperty(tab, 'display', { value: display });
+
+    (tab as unknown as { refreshSettingsTab(): void }).refreshSettingsTab();
+
+    expect(display).toHaveBeenCalledOnce();
+  });
+
   it('preserves an unsaved template draft when the settings definitions refresh', () => {
     const tab = makeTab();
     let onChange: ((value: string) => void) | undefined;

@@ -353,7 +353,9 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
   }
 
   private refreshSettingsTab(): void {
-    if (typeof this.update === 'function') this.update();
+    // SettingTab.update() was introduced in Obsidian 1.13; keep the declared 1.11.4 minimum via fallback.
+    const update = Reflect.get(this, 'update');
+    if (typeof update === 'function') update.call(this);
     else this.display();
   }
 
