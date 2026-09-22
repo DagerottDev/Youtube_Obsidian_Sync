@@ -538,7 +538,7 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName('Video frontmatter template').setHeading()
       .setDesc('Customize YAML properties for newly generated video notes. Do not include --- delimiters. Existing notes change only when you run the migration below.');
 
-    let templateDraft = this.plugin.settings.videoFrontmatterTemplate;
+    let templateDraft = this.templateDraft ?? this.plugin.settings.videoFrontmatterTemplate;
     let templateInput: HTMLTextAreaElement;
     new Setting(containerEl)
       .setName('Template')
@@ -548,6 +548,7 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
         textInputRows(text.inputEl, 18);
         text.setValue(templateDraft).onChange((value) => {
           templateDraft = value;
+          this.templateDraft = value;
         });
       });
 
@@ -558,7 +559,10 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
         try {
           validateVideoTemplate(templateDraft, parseYaml);
           this.plugin.settings.videoFrontmatterTemplate = templateDraft;
-          void this.plugin.saveSettings().then(() => new Notice('Video frontmatter template saved.'));
+          void this.plugin.saveSettings().then(() => {
+            this.templateDraft = undefined;
+            new Notice('Video frontmatter template saved.');
+          });
         } catch (error) {
           new Notice(`Frontmatter template error: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -572,9 +576,13 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       }))
       .addButton((button) => button.setButtonText('Reset default').onClick(() => {
         templateDraft = DEFAULT_VIDEO_FRONTMATTER_TEMPLATE;
+        this.templateDraft = templateDraft;
         templateInput.value = templateDraft;
         this.plugin.settings.videoFrontmatterTemplate = templateDraft;
-        void this.plugin.saveSettings().then(() => new Notice('Default frontmatter template restored.'));
+        void this.plugin.saveSettings().then(() => {
+          this.templateDraft = undefined;
+          new Notice('Default frontmatter template restored.');
+        });
       }));
 
     new Setting(containerEl)
