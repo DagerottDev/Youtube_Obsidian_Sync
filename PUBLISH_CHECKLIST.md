@@ -47,10 +47,11 @@ automated review for this release is complete.
   restart, the current settings UI retained an unsaved template draft across Preview and a settings
   redraw. Syncing a public 24-video playlist produced 24 notes with transcripts and did not save
   the unsaved draft marker. The public directory also displays version 0.3.3.
-- [ ] Forum post — still needs the author's truthful answer to the mandatory yes/no comprehension
-  disclosure; general posting authorization does not answer that personal attestation.
-- [ ] Reddit post — waiting for author-written wording; r/ObsidianMD disallows primarily AI-generated
-  posts.
+- [ ] Forum post — submitted on 2026-09-23 with the author's truthful disclosure; the Forum
+  reports one post pending moderator approval. Do not submit a duplicate.
+- [ ] Reddit post — the author's wording is available, but the subreddit's pinned warning says a
+  first post promoting one's own app can lead to a ban. This account has no prior r/ObsidianMD
+  post; moderator guidance was requested before proceeding.
 - [x] Discord and YouTube/video promotions — excluded per the user's instruction.
 
 ## Promotion status
