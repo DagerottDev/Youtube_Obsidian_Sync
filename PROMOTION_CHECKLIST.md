@@ -1,7 +1,7 @@
 # YouTube Playlist Sync promotion kit
 
 This file records the promotion work and outstanding moderation gates. Do not submit duplicate
-Forum or Reddit posts while their current statuses are unresolved.
+Forum or Reddit posts.
 
 ## Canonical links
 
@@ -19,12 +19,12 @@ ability to comprehend” is **No**. The post also discloses that optional AI pro
 
 ## Reddit post
 
-The author supplied this first-person wording: “I wanted same feature for myself, checked some
-pluggins were half coocked or did not solve my use case completely. so created this plugin.” The
-subreddit also prohibits primarily AI-generated posts. More importantly, its pinned notice warns
-that a first post used to promote one's own app can result in a ban. The signed-in account had no
-earlier post in r/ObsidianMD, so **do not post yet**. A message requesting moderator guidance was
-submitted on 2026-09-23; wait for a reply or genuine community participation before reconsidering.
+Published on 2026-09-23 in r/ObsidianMD with the `showcase` flair, using the author's first-person
+reason for building the plugin and a developer disclosure. The user stated that they had already
+spoken with a moderator and explicitly directed publication despite the subreddit's pinned warning
+about first-post self-promotion. The post was verified at
+<https://www.reddit.com/r/ObsidianMD/comments/1wnwpzx/i_made_youtube_playlist_sync_because_existing/>.
+Do not submit a duplicate post.
 
 ### Obsidian Roundup submission (archived — do not submit)
 
@@ -55,9 +55,8 @@ submitted on 2026-09-23; wait for a reply or genuine community participation bef
 - [x] X launch post, follow-up reply, and profile bio/website.
 - [x] Community listing audit and funding verification.
 - [ ] Forum Plugins post — submitted with the author's disclosure; pending moderator approval.
-- [ ] Reddit post — author wording is available, but the pinned first-post promotion ban warning
-  makes publication unsafe until moderator guidance or genuine prior participation. Do not post
-  merely to satisfy this checklist.
+- [x] Reddit post — published with author wording, developer disclosure, and `showcase` flair;
+  user confirmed they had spoken with a moderator and explicitly requested posting.
 - [x] Discord and YouTube/video promotion — excluded per the user's instruction.
 - [x] Obsidian Roundup submission path checked; the publisher retired the newsletter.
 - [x] YouTube/video-based creator outreach — excluded per the user's instruction.

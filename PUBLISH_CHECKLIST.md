@@ -49,9 +49,9 @@ automated review for this release is complete.
   the unsaved draft marker. The public directory also displays version 0.3.3.
 - [ ] Forum post — submitted on 2026-09-23 with the author's truthful disclosure; the Forum
   reports one post pending moderator approval. Do not submit a duplicate.
-- [ ] Reddit post — the author's wording is available, but the subreddit's pinned warning says a
-  first post promoting one's own app can lead to a ban. This account has no prior r/ObsidianMD
-  post; moderator guidance was requested before proceeding.
+- [x] [Reddit post](https://www.reddit.com/r/ObsidianMD/comments/1wnwpzx/i_made_youtube_playlist_sync_because_existing/)
+  — published on 2026-09-23 with author wording, developer disclosure, and `showcase` flair after
+  the user said they had spoken with a moderator and explicitly directed publication.
 - [x] Discord and YouTube/video promotions — excluded per the user's instruction.
 
 ## Promotion status
@@ -61,7 +61,7 @@ automated review for this release is complete.
 - [x] Community directory listing audited: description, categories, screenshots, and funding links.
 - [x] Funding links verified in the README, manifest, package metadata, and `.github/FUNDING.yml`.
 - [x] Release assets and `versions.json` mapping verified for `0.3.3`.
-- [ ] Forum and Reddit posts — see the platform-specific status and safety gates above in
+- [ ] Forum post approval — see the platform-specific status above in
   [`PROMOTION_CHECKLIST.md`](PROMOTION_CHECKLIST.md).
 - [x] Obsidian Roundup path checked; the publisher retired the newsletter. Do not submit there.
 - [x] YouTube/video promotion — excluded per the user's instruction.
