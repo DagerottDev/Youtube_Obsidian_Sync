@@ -14,14 +14,24 @@
   writes. Stale scans are discarded when the folder changes or the settings panel closes.
 - [x] On 2026-10-13, `npm run check` passed type-check and 55 tests; `npm run build` and
   `git diff --check` passed. Live YouTube smoke test found 24 videos and 1,074 transcript lines.
-- [ ] Node 24 LTS CI, release/tag assets, provenance attestations, and public directory verification.
-- [ ] Publish and verify the existing Forum topic update and X announcement.
+- [x] Merged [PR #13](https://github.com/DagerottDev/Youtube_Obsidian_Sync/pull/13) at `966fda4`.
+  Node 24.21.0 passed all 55 tests and reproduced the committed bundle on the branch
+  (run 38340961414) and merged main (run 38341048408).
+- [x] Published [0.4.0](https://github.com/DagerottDev/Youtube_Obsidian_Sync/releases/tag/0.4.0)
+  on 2026-10-13; tag points to `966fda4`. Downloaded assets match tested files byte-for-byte:
+  `main.js` (74,556 bytes, SHA-256 `5fd1500c25f642fe94be2f98ba9d22daea14d017111fbe51b4d6597541681d56`)
+  and `manifest.json` (347 bytes, SHA-256 `6a1df409eab94716f87b3f3294240424ac7535e10d6aca203e8cdbac17e9e4b3`).
+- [x] Attestation run 38341079769 passed; `gh attestation verify` passed for both downloaded assets.
+- [ ] Obsidian public directory verification: release scan queued on 2026-10-13; review for
+  0.4.0 / `966fda4` is Pending, while the public listing still shows 0.3.3.
+- [x] Published and verified the existing [Forum topic update](https://forum.obsidian.md/t/youtube-playlist-sync-turn-public-playlists-into-obsidian-notes/118649/3)
+  and [X announcement](https://x.com/Rajveer761SM/status/2109846755965911485).
 - Physical iOS/Android device testing remains unverified; automated settings tests use mocks.
 
 ## Previous release — 0.3.3
 
-Current GitHub release and Obsidian directory version: **0.3.3** (`a0f4246`). The directory's
-automated review for this release is complete.
+The previous GitHub release and Obsidian directory version was **0.3.3** (`a0f4246`). The
+directory's automated review for that release completed; the records below are historical.
 
 ## Repository readiness
 
