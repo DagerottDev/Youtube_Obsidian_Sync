@@ -29,7 +29,25 @@ Do not submit a duplicate post.
 On 2026-10-06, Reddit displays “Sorry, this post has been removed by the moderators of
 r/ObsidianMD.” Do not use comments or another topic to work around that removal.
 
-## Local statistics update — 2026-10-06
+## Your statistics release — 2026-10-13
+
+- [x] Published [0.4.0 on GitHub](https://github.com/DagerottDev/Youtube_Obsidian_Sync/releases/tag/0.4.0)
+  after type-check, 55 tests, production build, Node 24 LTS CI, and live YouTube smoke checks passed.
+  Both release assets match the tested build and have verified GitHub provenance attestations.
+- [x] Published and verified the [existing Forum topic reply](https://forum.obsidian.md/t/youtube-playlist-sync-turn-public-playlists-into-obsidian-notes/118649/3).
+  The Forum rejected links in replies, so the published update references the original topic's
+  source-code link without adding links. No duplicate topic was created.
+- [x] Published and verified the [X announcement](https://x.com/Rajveer761SM/status/2109846755965911485)
+  from `@Rajveer761SM`, linking the 0.4.0 GitHub release.
+- [x] [Public directory](https://community.obsidian.md/plugins/youtube-playlist-sync) shows 0.4.0
+  and the statistics documentation. Automated review is Completed, including a byte-for-byte
+  release build check; only non-blocking source/clipboard recommendations remain.
+- Physical iOS/Android device tests remain unverified and are explicitly disclosed in release notes
+  and the Forum update. Automated settings tests use mocks.
+- Reddit remains excluded after moderator removal; Discord and video outreach remain excluded
+  under the user's earlier instruction.
+
+## Local statistics preview — 2026-10-06
 
 At the time of this update, the statistics implementation was local and unreleased, and the
 public release was 0.3.3. The copy below records the upcoming-update announcement from October 6.
