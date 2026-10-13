@@ -78,12 +78,16 @@ The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
   of the note.
 - A validated YAML template controls video-note frontmatter, with an explicit preview-and-confirm
   migration for existing notes.
+- **Your statistics:** View collection totals and local activity counters, pause recording,
+  reset counters, and preview or copy an aggregate report. Nothing is uploaded automatically.
 
 Video notes are preserved during repeat syncs. The plugin-managed playlist and root indexes
 are regenerated, so keep personal annotations in video notes or separate notes.
 
 ### Recent additions
 
+- **Your statistics (0.4.0):** Count playlists, notes, transcripts, AI summaries, and sync runs
+  locally. Existing notes contribute to collection totals; activity begins when recording starts.
 - **Custom AI instructions:** Keep the built-in summary prompt, append your own guidance, or
   replace the guidance while retaining the structured summary format.
 - **Custom video-note properties:** Define video frontmatter with a validated YAML template and
@@ -391,7 +395,38 @@ so syncing resumes with the remaining videos.
 
 For normal playlist syncing, the plugin makes outbound HTTPS requests to YouTube to fetch
 playlist data, video metadata, thumbnails, and captions for the public playlists you configure.
-It does not collect telemetry.
+It does not send telemetry or usage statistics to the developer or an analytics service.
+
+### Your statistics
+
+Plugin settings include **Your statistics**, with **Record local statistics** enabled by
+default. Only aggregate activity counters and their start date are stored locally in the
+plugin's `data.json`. Your vault sync or backups may copy this file.
+
+**Current collection** scans the configured base folder and its subfolders when the panel
+opens. It shows configured playlists, video notes, notes with transcripts, and notes with
+AI summaries. **Refresh totals** updates these counts after deletions or edits. Notes moved
+outside the base folder are excluded; index notes and unrelated files are not counted.
+Unreadable files and invalid plugin metadata are skipped, with partial totals clearly labeled.
+These totals remain available when recording is disabled.
+
+**Activity since recording began** counts saved playlist additions, video notes created,
+transcripts saved, AI summaries generated (including regenerations), successful sync runs,
+and sync runs with errors. A partially successful sync counts as a run with errors; AI
+failures do not change the YouTube sync result. Activity starts when this feature first
+loads, so existing notes do not reconstruct past activity. Counters record successful writes,
+not unique videos, and are saved at operation boundaries. An abrupt shutdown can lose activity
+since the last save; a statistics-save failure does not fail a successful note or summary write.
+
+Disabling recording pauses counters without deleting them; enabling it resumes them.
+**Reset counters** asks for confirmation, clears activity, and restarts its date while
+preserving notes, playlists, current collection totals, and the recording preference.
+
+**Preview report** performs a fresh scan and displays a read-only JSON report. **Copy report**
+copies it for you to manually share if you choose. The report contains only plugin version,
+recording status/start date, counters, current totals, scan timestamp, and skipped-file count.
+It excludes URLs, titles, paths, note content, credentials, error messages, and user identifiers.
+Nothing uploads automatically, and this feature makes no network requests.
 
 When **AI summaries are disabled**, no vault content is sent to an AI service.
 

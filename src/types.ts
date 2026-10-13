@@ -1,3 +1,5 @@
+import type { UsageStats } from './statistics';
+
 export type AIProviderPreset = 'openai' | 'nvidia-nim' | 'custom';
 export type AIProtocol = 'responses' | 'chat-completions';
 export type AIPromptMode = 'default' | 'append' | 'replace';
@@ -53,6 +55,8 @@ export const AI_PROVIDER_DEFAULTS: Record<AIProviderPreset, AIProviderDefaults> 
 
 /** Settings persisted via plugin data. */
 export interface YouTubePlaylistSyncSettings {
+  /** Local aggregate statistics; never uploaded automatically. */
+  usageStats: UsageStats;
   /** List of playlist URLs to sync. */
   playlists: { url: string }[];
   /** Run a sync when Obsidian finishes loading. */
@@ -94,6 +98,14 @@ export interface YouTubePlaylistSyncSettings {
 }
 
 export const DEFAULT_SETTINGS: YouTubePlaylistSyncSettings = {
+  usageStats: {
+    enabled: true,
+    startedAt: new Date().toISOString(),
+    counters: {
+      playlistsAdded: 0, videoNotesCreated: 0, transcriptsSaved: 0,
+      summariesGenerated: 0, syncsCompleted: 0, syncsWithErrors: 0,
+    },
+  },
   playlists: [],
   syncOnStartup: true,
   syncIntervalMinutes: 30,

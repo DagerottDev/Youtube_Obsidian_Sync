@@ -6,6 +6,7 @@ import {
   type AIProviderPreset,
   type YouTubePlaylistSyncSettings,
 } from './types';
+import { normalizeUsageStats } from './statistics';
 
 const AI_PROVIDERS = new Set<AIProviderPreset>(['openai', 'nvidia-nim', 'custom']);
 const AI_PROTOCOLS = new Set<AIProtocol>(['responses', 'chat-completions']);
@@ -53,6 +54,7 @@ export function normalizeSettings(value: unknown): YouTubePlaylistSyncSettings {
     : DEFAULT_SETTINGS.aiCustomPrompt;
 
   return {
+    usageStats: normalizeUsageStats(stored.usageStats),
     playlists,
     syncOnStartup: typeof stored.syncOnStartup === 'boolean'
       ? stored.syncOnStartup

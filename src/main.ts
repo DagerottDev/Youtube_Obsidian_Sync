@@ -1,6 +1,5 @@
 import { App, Modal, Notice, Platform, Plugin, Setting, TFile, TFolder, normalizePath, parseYaml, stringifyYaml } from 'obsidian';
 import {
-  DEFAULT_SETTINGS,
   DEFAULT_VIDEO_FRONTMATTER_TEMPLATE,
   providerDisplayName,
   resolvedAIEndpoint,
@@ -46,6 +45,7 @@ import {
 } from './noteFrontmatter';
 import { normalizeSettings } from './settingsModel';
 import { collectMarkdownFiles } from './vaultFiles';
+import { incrementUsage, normalizeUsageStats, scanCollection, type CollectionStats, type UsageCounter } from './statistics';
 
 const PLAYLIST_ID_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
 const VIDEO_ID_FRONTMATTER_REGEX = /^videoId:\s*["']?([^"'\s]+)["']?\s*$/m;
@@ -99,12 +99,14 @@ class MigrationPreviewModal extends Modal {
 }
 
 export default class YouTubePlaylistSyncPlugin extends Plugin {
-  settings: YouTubePlaylistSyncSettings = DEFAULT_SETTINGS;
+  settings: YouTubePlaylistSyncSettings = normalizeSettings(undefined);
   private isSyncing = false;
   private isAISummarizing = false;
   private lastSyncAt = 0;
   private statusBarEl?: HTMLElement;
   private warnedAboutInvalidTemplate = false;
+  private settingsSave: Promise<void> = Promise.resolve();
+  private settingsTab?: YouTubePlaylistSyncSettingTab;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -115,7 +117,8 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       this.updateStatusBar('idle');
     }
 
-    this.addSettingTab(new YouTubePlaylistSyncSettingTab(this.app, this));
+    this.settingsTab = new YouTubePlaylistSyncSettingTab(this.app, this);
+    this.addSettingTab(this.settingsTab);
 
     this.addRibbonIcon('refresh-cw', 'Sync YouTube playlists now', () => {
       void this.syncAll();
@@ -177,10 +180,46 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
   async loadSettings(): Promise<void> {
     const stored: unknown = await this.loadData();
     this.settings = normalizeSettings(stored);
+    const previous = typeof stored === 'object' && stored !== null
+      ? (stored as { usageStats?: { startedAt?: unknown } }).usageStats?.startedAt : undefined;
+    if (previous !== this.settings.usageStats.startedAt) await this.persistUsageStats(false);
   }
 
   async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
+    const write = this.settingsSave.then(() => this.saveData(JSON.parse(JSON.stringify(this.settings))));
+    // Keep subsequent saves usable after a failed write; snapshot when the queued write starts.
+    this.settingsSave = write.catch(() => {});
+    await write;
+    this.settingsTab?.refreshStatistics();
+  }
+
+  recordUsage(key: UsageCounter): void {
+    incrementUsage(this.settings.usageStats, key);
+    this.settingsTab?.refreshStatistics();
+  }
+
+  async persistUsageStats(refreshCollection = true): Promise<void> {
+    try {
+      await this.saveSettings();
+    } catch {
+      new Notice('Local statistics could not be saved. Counters are retained in memory and will be retried on the next save.');
+    }
+    this.settingsTab?.refreshStatistics(refreshCollection);
+  }
+
+  async resetUsageStats(): Promise<void> {
+    this.settings.usageStats = normalizeUsageStats({ enabled: this.settings.usageStats.enabled });
+    await this.persistUsageStats(false);
+  }
+
+  async scanUsageCollection(folder = this.settings.baseFolder): Promise<CollectionStats> {
+    const base = this.app.vault.getAbstractFileByPath(normalizePath(folder));
+    const files = base instanceof TFolder ? collectMarkdownFiles(
+      base,
+      (entry): entry is TFolder => entry instanceof TFolder,
+      (entry): entry is TFile => entry instanceof TFile && entry.extension === 'md',
+    ) : [];
+    return scanCollection(files, (file) => this.app.vault.read(file), parseYaml);
   }
 
   private updateStatusBar(text: string): void {
@@ -211,6 +250,7 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
     }
     this.isSyncing = true;
     this.updateStatusBar('syncing…');
+    let succeeded = false;
     try {
       const results: PlaylistSyncResult[] = [];
       for (const playlist of this.settings.playlists) {
@@ -236,6 +276,7 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       const created = results.reduce((sum, r) => sum + r.created, 0);
       const failed = results.reduce((sum, r) => sum + r.failed, 0);
       const errors = results.filter((r) => r.error);
+      succeeded = failed === 0 && errors.length === 0;
       const message = errors.length
         ? `YouTube Sync: ${created} new notes, ${failed} failed (${errors.length} playlist error${errors.length > 1 ? 's' : ''})`
         : `YouTube Sync: ${created} new notes${failed ? `, ${failed} failed` : ''}`;
@@ -243,6 +284,8 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       this.updateStatusBar(new Date().toLocaleTimeString());
     } finally {
       this.isSyncing = false;
+      this.recordUsage(succeeded ? 'syncsCompleted' : 'syncsWithErrors');
+      await this.persistUsageStats();
     }
   }
 
@@ -292,6 +335,8 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
         const file = await this.app.vault.create(path, content);
         synced.add(entry.videoId);
         created += 1;
+        this.recordUsage('videoNotesCreated');
+        if (transcript?.length) this.recordUsage('transcriptsSaved');
 
         // AI is deliberately best-effort: a failed AI request never turns a successful YouTube sync into a failure.
         if (autoAIProvider && transcript?.length) {
@@ -355,6 +400,8 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       new Notice('AI summary generated.');
     } catch (error) {
       new Notice(`AI summary failed: ${this.userFacingError(error)}`);
+    } finally {
+      await this.persistUsageStats();
     }
   }
 
@@ -419,6 +466,7 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       }
     } finally {
       this.isAISummarizing = false;
+      await this.persistUsageStats();
     }
     new Notice(`AI summaries: ${succeeded} generated${failed ? `, ${failed} failed` : ''}.`);
   }
@@ -613,6 +661,7 @@ export default class YouTubePlaylistSyncPlugin extends Plugin {
       updated = applyAISummaryToNote(latestContent, summary, provider.id, provider.model);
     }
     await this.app.vault.modify(file, updated);
+    this.recordUsage('summariesGenerated');
   }
 
   private isFatalAIError(error: unknown): boolean {
