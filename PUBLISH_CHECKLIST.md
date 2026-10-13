@@ -22,8 +22,12 @@
   `main.js` (74,556 bytes, SHA-256 `5fd1500c25f642fe94be2f98ba9d22daea14d017111fbe51b4d6597541681d56`)
   and `manifest.json` (347 bytes, SHA-256 `6a1df409eab94716f87b3f3294240424ac7535e10d6aca203e8cdbac17e9e4b3`).
 - [x] Attestation run 38341079769 passed; `gh attestation verify` passed for both downloaded assets.
-- [ ] Obsidian public directory verification: release scan queued on 2026-10-13; review for
-  0.4.0 / `966fda4` is Pending, while the public listing still shows 0.3.3.
+- [x] [Obsidian public directory](https://community.obsidian.md/plugins/youtube-playlist-sync)
+  displays 0.4.0 and the new statistics README on 2026-10-13. Review for `966fda4` is Completed:
+  attestation, network, dependencies, and byte-for-byte build verification pass. Non-blocking
+  recommendations cover report clipboard access and the existing legacy settings fallback;
+  the existing Promise callback typing warnings remain. Report copying only writes to the
+  clipboard after a user click; it never reads clipboard content.
 - [x] Published and verified the existing [Forum topic update](https://forum.obsidian.md/t/youtube-playlist-sync-turn-public-playlists-into-obsidian-notes/118649/3)
   and [X announcement](https://x.com/Rajveer761SM/status/2109846755965911485).
 - Physical iOS/Android device testing remains unverified; automated settings tests use mocks.

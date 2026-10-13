@@ -39,7 +39,9 @@ r/ObsidianMD.” Do not use comments or another topic to work around that remova
   source-code link without adding links. No duplicate topic was created.
 - [x] Published and verified the [X announcement](https://x.com/Rajveer761SM/status/2109846755965911485)
   from `@Rajveer761SM`, linking the 0.4.0 GitHub release.
-- [ ] Directory rollout: manually queued the 0.4.0 scan; automated review is Pending.
+- [x] [Public directory](https://community.obsidian.md/plugins/youtube-playlist-sync) shows 0.4.0
+  and the statistics documentation. Automated review is Completed, including a byte-for-byte
+  release build check; only non-blocking source/clipboard recommendations remain.
 - Physical iOS/Android device tests remain unverified and are explicitly disclosed in release notes
   and the Forum update. Automated settings tests use mocks.
 - Reddit remains excluded after moderator removal; Discord and video outreach remain excluded
