@@ -21,6 +21,7 @@ import {
   type AIProviderPreset,
 } from './types';
 import { previewVideoTemplate, validateVideoTemplate } from './frontmatter';
+import { buildUsageReport, USAGE_COUNTER_LABELS, type CollectionStats, type UsageCounter } from './statistics';
 
 const PLAYLIST_URL_REGEX = /(?:[?&]list=|youtube\.com\/playlist\/)([a-zA-Z0-9_-]+)/;
 
@@ -33,20 +34,57 @@ function textInputRows(input: HTMLTextAreaElement, rows: number): void {
 }
 
 class TextPreviewModal extends Modal {
-  constructor(app: App, private readonly title: string, private readonly text: string) {
+  constructor(app: App, private readonly title: string, private readonly text: string, private readonly copyable = false) {
     super(app);
   }
 
   onOpen(): void {
     this.setTitle(this.title);
-    this.contentEl.createEl('pre', { text: this.text });
+    if (this.copyable) {
+      const input = this.contentEl.createEl('textarea', { attr: { 'aria-label': 'Local usage report' } });
+      input.value = this.text;
+      input.readOnly = true;
+      textInputRows(input, 18);
+      new Setting(this.contentEl).addButton((button) => button.setButtonText('Copy report').setCta().onClick(async () => {
+        try {
+          await navigator.clipboard.writeText(this.text);
+          new Notice('Usage report copied.');
+        } catch {
+          input.focus();
+          input.select();
+          new Notice('Clipboard unavailable. Select and copy the report manually.');
+        }
+      }));
+    } else this.contentEl.createEl('pre', { text: this.text });
     new Setting(this.contentEl).addButton((button) => button.setButtonText('Close').onClick(() => this.close()));
+  }
+}
+
+class ResetStatisticsModal extends Modal {
+  constructor(app: App, private readonly plugin: YouTubePlaylistSyncPlugin) { super(app); }
+
+  onOpen(): void {
+    this.setTitle('Reset local statistics?');
+    this.contentEl.createEl('p', { text: 'This clears activity counters and restarts their date. Your playlists, notes, current collection totals, and recording preference are preserved.' });
+    new Setting(this.contentEl)
+      .addButton((button) => button.setButtonText('Cancel').onClick(() => this.close()))
+      .addButton((button) => button.setButtonText('Reset counters').onClick(async () => {
+        button.setDisabled(true);
+        await this.plugin.resetUsageStats();
+        this.close();
+      }));
   }
 }
 
 export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
   plugin: YouTubePlaylistSyncPlugin;
   private templateDraft?: string;
+  private statisticsEl?: HTMLElement;
+  private collection?: CollectionStats;
+  private collectionFolder?: string;
+  private scanning = false;
+  private scanError?: string;
+  private scanVersion = 0;
 
   constructor(app: App, plugin: YouTubePlaylistSyncPlugin) {
     super(app, plugin);
@@ -316,6 +354,12 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
           })),
         ),
       ]),
+      group('Your statistics', [row('Local statistics', 'Local counts and a manually shareable report.', (setting) => {
+        setting.settingEl.empty();
+        const container = setting.settingEl.createDiv();
+        container.setCssStyles({ width: '100%' });
+        this.mountStatistics(container);
+      })]),
     ];
   }
 
@@ -371,7 +415,15 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
       return false;
     }
     this.plugin.settings.playlists.push({ url: normalized });
-    await this.plugin.saveSettings();
+    try {
+      await this.plugin.saveSettings();
+    } catch {
+      this.plugin.settings.playlists = this.plugin.settings.playlists.filter((playlist) => playlist.url !== normalized);
+      new Notice('The playlist could not be saved. Please try again.');
+      return false;
+    }
+    this.plugin.recordUsage('playlistsAdded');
+    await this.plugin.persistUsageStats(false);
     return true;
   }
 
@@ -753,5 +805,128 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
           void this.plugin.generateMissingSummaries();
         }),
       );
+    new Setting(containerEl).setName('Your statistics').setHeading();
+    this.mountStatistics(containerEl.createDiv());
+  }
+
+  hide(): void {
+    this.statisticsEl = undefined;
+    this.collection = undefined;
+    this.scanError = undefined;
+    this.scanning = false;
+    this.scanVersion += 1;
+  }
+
+  private mountStatistics(container: HTMLElement): void {
+    this.statisticsEl = container;
+    this.refreshStatistics();
+  }
+
+  /** Update only this panel, preserving unsaved settings drafts and focus elsewhere. */
+  refreshStatistics(invalidate = false): void {
+    if (!this.statisticsEl) return;
+    if (invalidate || this.collectionFolder !== this.plugin.settings.baseFolder) {
+      this.collection = undefined;
+      this.scanError = undefined;
+      this.scanning = false;
+      this.collectionFolder = this.plugin.settings.baseFolder;
+      this.scanVersion += 1;
+    }
+    if (!this.collection && !this.scanning && !this.scanError) {
+      void this.refreshCollection();
+      return;
+    }
+    const container = this.statisticsEl;
+    const active = container.ownerDocument?.activeElement as HTMLElement | null;
+    const focusedControl = active && container.contains(active) ? active.dataset.statsControl : undefined;
+    container.empty();
+    const stats = this.plugin.settings.usageStats;
+    new Setting(container).setName('Record local statistics')
+      .setDesc('Enabled by default. Only aggregate counters are saved in this vault; nothing is uploaded automatically.')
+      .addToggle((toggle) => {
+        const input = toggle.toggleEl.querySelector<HTMLElement>('input') ?? toggle.toggleEl;
+        input.dataset.statsControl = 'recording';
+        input.setAttribute('aria-label', 'Record local statistics');
+        toggle.setValue(stats.enabled).onChange((enabled) => {
+          stats.enabled = enabled;
+          void this.plugin.persistUsageStats(false);
+          this.refreshStatistics();
+        });
+      });
+    let status = this.scanning ? 'Refreshing totals…' : this.scanError
+      ?? `Last refreshed: ${new Date(this.collection!.scannedAt).toLocaleString()}.`;
+    if (this.collection?.skippedFiles) status += ` Partial totals: ${this.collection.skippedFiles} file${this.collection.skippedFiles === 1 ? '' : 's'} skipped.`;
+    new Setting(container).setName('Current collection').setHeading()
+      .setDesc(`Counts in the configured base folder and its subfolders. ${status}`);
+    const metric = (name: string, value: number | undefined) => {
+      const setting = new Setting(container).setName(name);
+      const number = setting.controlEl.createSpan({ text: value === undefined ? '—' : value.toLocaleString() });
+      number.setCssStyles({ fontVariantNumeric: 'tabular-nums' });
+    };
+    metric('Configured playlists', this.plugin.settings.playlists.length);
+    metric('Video notes', this.collection?.videoNotes);
+    metric('Notes with transcripts', this.collection?.notesWithTranscripts);
+    metric('Notes with AI summaries', this.collection?.notesWithSummaries);
+    new Setting(container).setName('Activity since recording began').setHeading()
+      .setDesc(`Since ${new Date(stats.startedAt).toLocaleString()}.${stats.enabled ? '' : ' Recording paused.'} Saved actions count individually, including summary regenerations. Sync runs also include failures.`);
+    for (const key of Object.keys(USAGE_COUNTER_LABELS) as UsageCounter[]) metric(USAGE_COUNTER_LABELS[key], stats.counters[key]);
+    new Setting(container).setName('Statistics actions')
+      .addButton((button) => {
+        button.buttonEl.dataset.statsControl = 'refresh';
+        button.setButtonText('Refresh totals').setDisabled(this.scanning).onClick(() => { void this.refreshCollection(); });
+      })
+      .addButton((button) => {
+        button.buttonEl.dataset.statsControl = 'preview';
+        button.setButtonText('Preview report').onClick(async () => {
+          button.setDisabled(true);
+          const folder = this.plugin.settings.baseFolder;
+          const version = this.scanVersion;
+          try {
+            const totals = await this.plugin.scanUsageCollection(folder);
+            if (version !== this.scanVersion || !this.statisticsEl) return;
+            if (folder !== this.plugin.settings.baseFolder) {
+              new Notice('The base folder changed. Preview the report again.');
+              return;
+            }
+            this.scanVersion += 1;
+            this.scanning = false;
+            this.scanError = undefined;
+            this.collection = totals;
+            this.collectionFolder = folder;
+            this.refreshStatistics();
+            const report = buildUsageReport(this.plugin.manifest.version, this.plugin.settings.usageStats, this.plugin.settings.playlists.length, totals);
+            new TextPreviewModal(this.app, 'Local usage report', report, true).open();
+          } catch {
+            new Notice('The collection could not be scanned. Try refreshing totals again.');
+          } finally {
+            button.setDisabled(false);
+          }
+        });
+      })
+      .addButton((button) => {
+        button.buttonEl.dataset.statsControl = 'reset';
+        button.setButtonText('Reset counters').onClick(() => { new ResetStatisticsModal(this.app, this.plugin).open(); });
+      });
+    if (focusedControl) container.querySelector<HTMLElement>(`[data-stats-control="${focusedControl}"]`)?.focus();
+  }
+
+  private async refreshCollection(): Promise<void> {
+    const folder = this.plugin.settings.baseFolder;
+    const version = ++this.scanVersion;
+    this.collectionFolder = folder;
+    this.scanning = true;
+    this.scanError = undefined;
+    this.refreshStatistics();
+    try {
+      const totals = await this.plugin.scanUsageCollection(folder);
+      if (version === this.scanVersion) this.collection = totals;
+    } catch {
+      if (version === this.scanVersion) this.scanError = 'Scan unavailable. Refresh totals to retry.';
+    } finally {
+      if (version === this.scanVersion) {
+        this.scanning = false;
+        this.refreshStatistics();
+      }
+    }
   }
 }

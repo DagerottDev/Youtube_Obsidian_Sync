@@ -1,0 +1,256 @@
+import { parse, stringify } from 'yaml';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('obsidian', async (importOriginal) => {
+  const original = await importOriginal<Record<string, unknown>>();
+  return {
+    ...original,
+    Plugin: class {
+      constructor(public app: unknown, public manifest: unknown) {}
+      saveData = vi.fn().mockResolvedValue(undefined);
+      loadData = vi.fn().mockResolvedValue(null);
+    },
+    TFile: class {
+      extension = 'md';
+      basename: string;
+      constructor(public path = '') { this.basename = path.split('/').pop()!.replace(/\.md$/, ''); }
+    },
+    TFolder: class { constructor(public children: unknown[] = []) {} },
+    normalizePath: (path: string) => path,
+    parseYaml: parse,
+    stringifyYaml: stringify,
+  };
+});
+vi.mock('../src/youtube', async (importOriginal) => ({
+  ...await importOriginal<Record<string, unknown>>(),
+  fetchPlaylist: vi.fn(), fetchVideoMetadata: vi.fn(),
+}));
+
+import { App, TFile, TFolder, type PluginManifest } from 'obsidian';
+import Plugin from '../src/main';
+import { YouTubePlaylistSyncSettingTab } from '../src/settings';
+import { normalizeSettings } from '../src/settingsModel';
+import { fetchPlaylist, fetchVideoMetadata } from '../src/youtube';
+import type { AIProvider } from '../src/ai/types';
+import type { PlaylistSyncResult, TranscriptLine } from '../src/types';
+
+const summary = { summary: 'Example', keyTakeaways: [], importantConcepts: [], actionItems: [], questionsToExplore: [] };
+const result: PlaylistSyncResult = { name: 'Playlist', playlistId: 'PL-test', total: 1, created: 1, skipped: 0, failed: 0, folder: 'YouTube' };
+type Internals = {
+  isSyncing: boolean;
+  syncPlaylist: (url: string) => Promise<PlaylistSyncResult>;
+  writeRootIndex: (results: PlaylistSyncResult[]) => Promise<void>;
+  createAIProvider: () => AIProvider;
+  fetchTranscript: () => Promise<TranscriptLine[] | null>;
+  ensureFolder: () => Promise<void>;
+  scanSyncedVideoIds: () => Promise<Set<string>>;
+};
+
+function makePlugin() {
+  const file = new TFile();
+  Object.assign(file, { path: 'YouTube/Example.md', basename: 'Example', extension: 'md' });
+  const folder = new TFolder();
+  folder.children = [file];
+  const contents = new Map([[file.path, '---\nsource: youtube\nvideoId: abc12345678\n---\n# Example\n## Transcript\nCaption\n## Source\nYouTube']]);
+  const vault = {
+    getAbstractFileByPath: vi.fn((path: string) => path === 'YouTube' ? folder : null),
+    read: vi.fn(async (entry: TFile) => contents.get(entry.path)!),
+    cachedRead: vi.fn(async (entry: TFile) => contents.get(entry.path)!),
+    modify: vi.fn(async (entry: TFile, text: string) => { contents.set(entry.path, text); }),
+    create: vi.fn(async (path: string, text: string) => {
+      const created = new TFile();
+      Object.assign(created, { path, basename: path.split('/').pop()!.replace(/\.md$/, ''), extension: 'md' });
+      folder.children.push(created);
+      contents.set(path, text);
+      return created;
+    }),
+  };
+  const plugin = new Plugin({ vault, workspace: { getActiveFile: () => file } } as unknown as App,
+    { version: '0.3.3' } as PluginManifest);
+  plugin.settings = normalizeSettings({ playlists: [{ url: 'https://youtube.com/playlist?list=PL-test' }], aiEnabled: true });
+  const internal = plugin as unknown as Internals;
+  const provider = { id: 'custom', displayName: 'Test', model: 'test', summarize: vi.fn().mockResolvedValue(summary) } as unknown as AIProvider;
+  vi.spyOn(internal, 'createAIProvider').mockReturnValue(provider);
+  return { plugin, internal, vault, file, folder, contents, provider };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubGlobal('window', globalThis);
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+describe('statistics at plugin operation boundaries', () => {
+  it('persists the first-load date once and restores it on reload', async () => {
+    const { plugin } = makePlugin();
+    vi.mocked(plugin.loadData).mockResolvedValue(null);
+    await plugin.loadSettings();
+    const stored = vi.mocked(plugin.saveData).mock.calls[0][0];
+    expect(stored.usageStats.enabled).toBe(true);
+    vi.mocked(plugin.loadData).mockResolvedValue(JSON.parse(JSON.stringify(stored)));
+    await plugin.loadSettings();
+    expect(plugin.settings.usageStats.startedAt).toBe(stored.usageStats.startedAt);
+    expect(plugin.saveData).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes writes, snapshots queued work when it starts, and recovers after failure', async () => {
+    const { plugin } = makePlugin();
+    let finish!: () => void;
+    vi.mocked(plugin.saveData).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    plugin.recordUsage('videoNotesCreated');
+    const first = plugin.saveSettings();
+    await Promise.resolve();
+    plugin.recordUsage('videoNotesCreated');
+    const second = plugin.saveSettings();
+    expect(plugin.saveData).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(plugin.saveData).mock.calls[0][0].usageStats.counters.videoNotesCreated).toBe(1);
+    finish();
+    await Promise.all([first, second]);
+    expect(vi.mocked(plugin.saveData).mock.calls[1][0].usageStats.counters.videoNotesCreated).toBe(2);
+    vi.mocked(plugin.saveData).mockRejectedValueOnce(new Error('disk full'));
+    await expect(plugin.persistUsageStats()).resolves.toBeUndefined();
+    await plugin.saveSettings();
+    expect(plugin.settings.usageStats.counters.videoNotesCreated).toBe(2);
+  });
+
+  it('counts manual regeneration and bulk generation after successful writes only', async () => {
+    const { plugin, vault, file, contents } = makePlugin();
+    await plugin.generateSummaryForCurrentNote();
+    await plugin.generateSummaryForCurrentNote();
+    expect(plugin.settings.usageStats.counters.summariesGenerated).toBe(2);
+    vault.modify.mockRejectedValueOnce(new Error('disk full'));
+    await plugin.generateSummaryForCurrentNote();
+    expect(plugin.settings.usageStats.counters.summariesGenerated).toBe(2);
+    contents.set(file.path, '---\nsource: youtube\nvideoId: abc12345678\n---\n## Transcript\nCaption');
+    await plugin.generateMissingSummaries();
+    expect(plugin.settings.usageStats.counters.summariesGenerated).toBe(3);
+    vi.mocked(plugin.saveData).mockRejectedValueOnce(new Error('stats disk error'));
+    await expect(plugin.generateSummaryForCurrentNote()).resolves.toBeUndefined();
+    expect(plugin.settings.usageStats.counters.summariesGenerated).toBe(4);
+  });
+
+  it('counts saved video notes, transcripts, and automatic summaries without counting index notes or failures', async () => {
+    vi.useFakeTimers();
+    const { plugin, internal, vault } = makePlugin();
+    vi.spyOn(internal, 'ensureFolder').mockResolvedValue(undefined);
+    vi.spyOn(internal, 'scanSyncedVideoIds').mockResolvedValue(new Set(['existing']));
+    vi.spyOn(internal, 'fetchTranscript').mockResolvedValue([{ text: 'Caption', offset: 0 }]);
+    vi.mocked(fetchPlaylist).mockResolvedValue({ title: 'Playlist', entries: ['existing', 'good', 'bad'].map((videoId) => ({
+      videoId, title: videoId, url: `https://youtu.be/${videoId}`, position: 0,
+    })) });
+    vi.mocked(fetchVideoMetadata).mockImplementation(async (id) => ({ videoId: id, title: id,
+      url: `https://youtu.be/${id}`, author: 'Channel', channelUrl: '', thumbnailUrl: '' }));
+    vault.create.mockImplementationOnce(async (path, text) => {
+      // The first video succeeds, the next video fails; subsequent index writes use the normal mock.
+      const file = new TFile();
+      Object.assign(file, { path, basename: 'good', extension: 'md' });
+      vault.read.mockResolvedValueOnce(text);
+      vault.cachedRead.mockResolvedValueOnce(text);
+      return file;
+    }).mockRejectedValueOnce(new Error('video write failed'));
+    const sync = plugin.syncAll();
+    await vi.runAllTimersAsync();
+    await sync;
+    expect(plugin.settings.usageStats.counters).toMatchObject({
+      videoNotesCreated: 1, transcriptsSaved: 1, summariesGenerated: 1, syncsCompleted: 0, syncsWithErrors: 1,
+    });
+    expect(vault.create.mock.calls.length).toBeGreaterThan(2);
+  });
+
+  it.each(['success', 'video error', 'playlist error', 'index error'] as const)('classifies a sync run: %s', async (outcome) => {
+    const { plugin, internal } = makePlugin();
+    const playlist = vi.spyOn(internal, 'syncPlaylist').mockResolvedValue({ ...result, failed: outcome === 'video error' ? 1 : 0 });
+    const index = vi.spyOn(internal, 'writeRootIndex').mockResolvedValue(undefined);
+    if (outcome === 'playlist error') playlist.mockRejectedValueOnce(new Error('fetch failed'));
+    if (outcome === 'index error') index.mockRejectedValueOnce(new Error('write failed'));
+    if (outcome === 'index error') await expect(plugin.syncAll()).rejects.toThrow('write failed');
+    else await plugin.syncAll();
+    expect(plugin.settings.usageStats.counters.syncsCompleted).toBe(outcome === 'success' ? 1 : 0);
+    expect(plugin.settings.usageStats.counters.syncsWithErrors).toBe(outcome === 'success' ? 0 : 1);
+    internal.isSyncing = true;
+    await plugin.syncAll();
+    internal.isSyncing = false;
+    plugin.settings.playlists = [];
+    await plugin.syncAll();
+    expect(playlist).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a successful video sync successful when automatic AI or statistics persistence fails', async () => {
+    vi.useFakeTimers();
+    const { plugin, internal, provider } = makePlugin();
+    vi.spyOn(internal, 'ensureFolder').mockResolvedValue(undefined);
+    vi.spyOn(internal, 'scanSyncedVideoIds').mockResolvedValue(new Set());
+    vi.spyOn(internal, 'fetchTranscript').mockResolvedValue([{ text: 'Caption', offset: 0 }]);
+    vi.spyOn(internal, 'writeRootIndex').mockResolvedValue(undefined);
+    vi.mocked(provider.summarize).mockRejectedValueOnce(new Error('AI unavailable'));
+    vi.mocked(plugin.saveData).mockRejectedValueOnce(new Error('statistics write failed'));
+    vi.mocked(fetchPlaylist).mockResolvedValue({ title: 'Playlist', entries: [{ videoId: 'new12345678', title: 'New', url: '', position: 0 }] });
+    vi.mocked(fetchVideoMetadata).mockResolvedValue({ videoId: 'new12345678', title: 'New', url: '', author: 'Channel', channelUrl: '', thumbnailUrl: '' });
+    const sync = plugin.syncAll();
+    await vi.runAllTimersAsync();
+    await expect(sync).resolves.toBeUndefined();
+    expect(plugin.settings.usageStats.counters).toMatchObject({ videoNotesCreated: 1, summariesGenerated: 0, syncsCompleted: 1, syncsWithErrors: 0 });
+  });
+
+  it('preserves recording preference, notes and playlists on reset, and scans only the base folder', async () => {
+    const { plugin, vault } = makePlugin();
+    plugin.settings.usageStats.enabled = false;
+    plugin.settings.usageStats.counters.playlistsAdded = 9;
+    plugin.settings.usageStats.startedAt = '2020-01-01T00:00:00.000Z';
+    const totals = await plugin.scanUsageCollection();
+    expect(totals).toMatchObject({ videoNotes: 1, notesWithTranscripts: 1 });
+    await plugin.resetUsageStats();
+    expect(plugin.settings.usageStats.enabled).toBe(false);
+    expect(plugin.settings.usageStats.counters.playlistsAdded).toBe(0);
+    expect(plugin.settings.usageStats.startedAt).not.toContain('2020');
+    expect(plugin.settings.playlists).toHaveLength(1);
+    expect(vault.modify).not.toHaveBeenCalled();
+    expect(await plugin.scanUsageCollection('Elsewhere')).toMatchObject({ videoNotes: 0 });
+  });
+
+  it('refreshes collection totals after deleting a note and reads notes in nested folders', async () => {
+    const { plugin, folder, file, contents } = makePlugin();
+    const nestedFile = new TFile();
+    Object.assign(nestedFile, { path: 'YouTube/Nested/Other.md', basename: 'Other', extension: 'md' });
+    const nested = new TFolder();
+    nested.children = [nestedFile];
+    folder.children.push(nested);
+    contents.set(nestedFile.path, '---\nsource: youtube\nvideoId: other123456\n---\n# Other');
+    expect(await plugin.scanUsageCollection()).toMatchObject({ videoNotes: 2, notesWithTranscripts: 1 });
+    folder.children = folder.children.filter((entry) => entry !== file);
+    expect(await plugin.scanUsageCollection()).toMatchObject({ videoNotes: 1, notesWithTranscripts: 0 });
+  });
+
+  it('leaves paused counters unchanged while sync and summaries still work', async () => {
+    const { plugin, internal, vault } = makePlugin();
+    plugin.settings.usageStats.enabled = false;
+    plugin.settings.usageStats.counters.syncsCompleted = 4;
+    const counters = { ...plugin.settings.usageStats.counters };
+    vi.spyOn(internal, 'syncPlaylist').mockResolvedValue(result);
+    vi.spyOn(internal, 'writeRootIndex').mockResolvedValue(undefined);
+    await plugin.syncAll();
+    await plugin.generateSummaryForCurrentNote();
+    expect(vault.modify).toHaveBeenCalledOnce();
+    expect(plugin.settings.usageStats.counters).toEqual(counters);
+    expect(await plugin.scanUsageCollection()).toMatchObject({ videoNotes: 1, notesWithSummaries: 1 });
+  });
+
+  it('counts additions only after successful settings saves; removal preserves historical additions', async () => {
+    const { plugin } = makePlugin();
+    plugin.settings.playlists = [];
+    const tab = new YouTubePlaylistSyncSettingTab(plugin.app, plugin);
+    const actions = tab as unknown as { addPlaylist(url: string): Promise<boolean>; removePlaylist(index: number): Promise<void> };
+    expect(await actions.addPlaylist('invalid')).toBe(false);
+    const url = 'https://youtube.com/playlist?list=PL-test';
+    vi.mocked(plugin.saveData).mockRejectedValueOnce(new Error('disk full'));
+    expect(await actions.addPlaylist(url)).toBe(false);
+    expect(plugin.settings.playlists).toHaveLength(0);
+    expect(plugin.settings.usageStats.counters.playlistsAdded).toBe(0);
+    expect(await actions.addPlaylist(url)).toBe(true);
+    expect(await actions.addPlaylist(url)).toBe(false);
+    await actions.removePlaylist(0);
+    expect(plugin.settings.usageStats.counters.playlistsAdded).toBe(1);
+  });
+});

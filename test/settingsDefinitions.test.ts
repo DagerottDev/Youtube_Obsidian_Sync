@@ -40,6 +40,7 @@ describe('declarative plugin settings', () => {
       'Note output',
       'Video frontmatter template',
       'AI summaries',
+      'Your statistics',
     ]);
     expect(names).toEqual(expect.arrayContaining([
       'Add playlist',
@@ -66,6 +67,7 @@ describe('declarative plugin settings', () => {
       'Generate summaries automatically',
       'Test connection',
       'Generate missing',
+      'Local statistics',
     ]));
   });
 

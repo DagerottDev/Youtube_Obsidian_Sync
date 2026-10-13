@@ -1,5 +1,25 @@
 # Obsidian Community Plugin Publication Checklist
 
+## 0.4.0 — Your statistics
+
+- [x] Collection totals scan only the configured base folder and nested folders; existing
+  modern and legacy notes count, while indexes and unrelated notes are excluded.
+- [x] Activity counters record saved playlist additions, note/transcript creation, summaries
+  (including regenerations), and successful or failed sync runs.
+- [x] Recording defaults on; pause/resume, confirmed reset, refresh, and preview/copy work in
+  both declarative and legacy settings. Reset preserves notes, playlists, and recording preference.
+- [x] Reports allowlist aggregates and dates; no content, titles, URLs, paths, credentials,
+  detailed errors, identifiers, uploads, or new network requests.
+- [x] Serialized saves recover after failures; failed statistics persistence does not fail note
+  writes. Stale scans are discarded when the folder changes or the settings panel closes.
+- [x] On 2026-10-13, `npm run check` passed type-check and 55 tests; `npm run build` and
+  `git diff --check` passed. Live YouTube smoke test found 24 videos and 1,074 transcript lines.
+- [ ] Node 24 LTS CI, release/tag assets, provenance attestations, and public directory verification.
+- [ ] Publish and verify the existing Forum topic update and X announcement.
+- Physical iOS/Android device testing remains unverified; automated settings tests use mocks.
+
+## Previous release — 0.3.3
+
 Current GitHub release and Obsidian directory version: **0.3.3** (`a0f4246`). The directory's
 automated review for this release is complete.
 
@@ -47,11 +67,13 @@ automated review for this release is complete.
   restart, the current settings UI retained an unsaved template draft across Preview and a settings
   redraw. Syncing a public 24-video playlist produced 24 notes with transcripts and did not save
   the unsaved draft marker. The public directory also displays version 0.3.3.
-- [ ] Forum post — submitted on 2026-09-23 with the author's truthful disclosure; the Forum
-  reports one post pending moderator approval. Do not submit a duplicate.
+- [x] [Forum post](https://forum.obsidian.md/t/youtube-playlist-sync-turn-public-playlists-into-obsidian-notes/118649)
+  — submitted on 2026-09-23 with the author's truthful disclosure; verified public on 2026-10-06.
+  Use the existing topic for updates.
 - [x] [Reddit post](https://www.reddit.com/r/ObsidianMD/comments/1wnwpzx/i_made_youtube_playlist_sync_because_existing/)
   — published on 2026-09-23 with author wording, developer disclosure, and `showcase` flair after
   the user said they had spoken with a moderator and explicitly directed publication.
+  On 2026-10-06, the post is marked removed by moderators; further promotion there is paused.
 - [x] Discord and YouTube/video promotions — excluded per the user's instruction.
 
 ## Promotion status
@@ -61,7 +83,7 @@ automated review for this release is complete.
 - [x] Community directory listing audited: description, categories, screenshots, and funding links.
 - [x] Funding links verified in the README, manifest, package metadata, and `.github/FUNDING.yml`.
 - [x] Release assets and `versions.json` mapping verified for `0.3.3`.
-- [ ] Forum post approval — see the platform-specific status above in
+- [x] Forum post approval — verified public on 2026-10-06; see the platform-specific status in
   [`PROMOTION_CHECKLIST.md`](PROMOTION_CHECKLIST.md).
 - [x] Obsidian Roundup path checked; the publisher retired the newsletter. Do not submit there.
 - [x] YouTube/video promotion — excluded per the user's instruction.
