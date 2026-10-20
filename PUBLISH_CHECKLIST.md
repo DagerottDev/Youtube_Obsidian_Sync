@@ -1,5 +1,30 @@
 # Obsidian Community Plugin Publication Checklist
 
+## 0.4.1 — Index ownership protection
+
+- [x] Standard repository security audit found one low-severity issue: a configured playlist's
+  remote title could select an existing folder and overwrite its `_Index.md` without ownership validation.
+- [x] Existing index updates validate current content inside `vault.process`. Playlist IDs must
+  match; manual notes, video notes, malformed metadata, and conflicting playlists are preserved.
+  Existing generated root indexes remain compatible with LF and CRLF line endings.
+- [x] Regression suite fails against the original writer (9 failures) and passes with the fix.
+- [x] Updated development dependencies to patched versions; `npm install` reports zero vulnerabilities.
+  New Obsidian types allow a cleared secret to be null; both settings paths preserve the existing empty-string setting.
+- [x] On 2026-10-19, Node 26 passed `npm run check` (70 tests), `npm run build`, and `git diff --check`.
+- [x] Fresh `npm audit` reports zero vulnerabilities. Live YouTube smoke passed: 24 videos,
+  metadata and 1,074 transcript lines.
+- [x] On 2026-10-20, Node 24.22.0 passed all 70 tests, typecheck and production build;
+  `main.js` is byte-identical to the Node 26 build and the bundle tested in Obsidian.
+- [x] Obsidian 1.14.4 desktop in a disposable vault passed 41 live checks: index ownership and
+  malformed/manual/video-note conflicts, LF/CRLF compatibility, 24 public video notes and
+  transcripts, and two successful syncs preserving existing video-note bytes and a user annotation.
+  Settings/report UI showed version 0.4.1 and expected aggregate totals. Full quit/relaunch
+  retained the enabled plugin, 24-note collection, settings and activity counters.
+- [ ] Verify Node 24 CI, merge the reviewed fix, publish tag `0.4.1` and exact `main.js`/`manifest.json` assets.
+- [ ] Verify downloaded release bytes, provenance attestations, and the public Obsidian directory version/review.
+- Physical iOS/Android device testing remains unverified. Vite emits a non-blocking warning about
+  future native config loading; current tests pass.
+
 ## 0.4.0 — Your statistics
 
 - [x] Collection totals scan only the configured base folder and nested folders; existing

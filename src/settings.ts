@@ -288,7 +288,7 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
           (setting) => setting.addComponent((el) => new SecretComponent(this.app, el)
             .setValue(this.plugin.settings.aiApiKeySecret)
             .onChange((value) => {
-              this.plugin.settings.aiApiKeySecret = value;
+              this.plugin.settings.aiApiKeySecret = value ?? '';
               void this.plugin.saveSettings();
             })),
         ),
@@ -692,7 +692,7 @@ export class YouTubePlaylistSyncSettingTab extends PluginSettingTab {
         new SecretComponent(this.app, el)
           .setValue(this.plugin.settings.aiApiKeySecret)
           .onChange((value) => {
-            this.plugin.settings.aiApiKeySecret = value;
+            this.plugin.settings.aiApiKeySecret = value ?? '';
             void this.plugin.saveSettings();
           }),
       );
