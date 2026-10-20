@@ -83,9 +83,14 @@ The plugin supports Obsidian on desktop, iOS, iPadOS, and Android.
 
 Video notes are preserved during repeat syncs. The plugin-managed playlist and root indexes
 are regenerated, so keep personal annotations in video notes or separate notes.
+An existing index is refreshed only when its generated metadata matches the expected index.
+Conflicting notes are preserved and reported as an index conflict; rename the conflicting note
+or use a different base folder before retrying.
 
 ### Recent additions
 
+- **Index protection (0.4.1):** A playlist title collision cannot replace another playlist's
+  index or a personal note. Development dependencies have also been updated to patched versions.
 - **Your statistics (0.4.0):** Count playlists, notes, transcripts, AI summaries, and sync runs
   locally. Existing notes contribute to collection totals; activity begins when recording starts.
 - **Custom AI instructions:** Keep the built-in summary prompt, append your own guidance, or
