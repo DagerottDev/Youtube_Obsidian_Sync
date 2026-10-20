@@ -20,8 +20,21 @@
   transcripts, and two successful syncs preserving existing video-note bytes and a user annotation.
   Settings/report UI showed version 0.4.1 and expected aggregate totals. Full quit/relaunch
   retained the enabled plugin, 24-note collection, settings and activity counters.
-- [ ] Verify Node 24 CI, merge the reviewed fix, publish tag `0.4.1` and exact `main.js`/`manifest.json` assets.
-- [ ] Verify downloaded release bytes, provenance attestations, and the public Obsidian directory version/review.
+- [x] Node 24 branch workflow [39378196183](https://github.com/DagerottDev/Youtube_Obsidian_Sync/actions/runs/39378196183)
+  and merged-main workflow [39378276124](https://github.com/DagerottDev/Youtube_Obsidian_Sync/actions/runs/39378276124) passed.
+  [PR #15](https://github.com/DagerottDev/Youtube_Obsidian_Sync/pull/15) merged as `91e1c34`.
+- [x] Published [0.4.1](https://github.com/DagerottDev/Youtube_Obsidian_Sync/releases/tag/0.4.1)
+  on 2026-10-20 with tag `0.4.1` at `91e1c3449aa069c51e2391897087683e0966178a`.
+  Downloaded assets match the tested build byte-for-byte: `main.js` (75,220 bytes, SHA-256
+  `c0dde76af4ec276f996b75e241f0a4848638421dad55ae4f2799ca645b58fc74`) and
+  `manifest.json` (347 bytes, SHA-256 `de844243949f04ed75367579672a64a25d1f69fabc9fdae758a4a84dd153f05c`).
+- [x] Attestation workflow [39378373259](https://github.com/DagerottDev/Youtube_Obsidian_Sync/actions/runs/39378373259)
+  passed; `gh attestation verify` passed for both downloaded assets.
+- [x] [Public Obsidian directory](https://community.obsidian.md/plugins/youtube-playlist-sync)
+  displays 0.4.1 and the index-protection README on 2026-10-20. Review for `91e1c34` is Completed:
+  attestation, network, dependency and byte-for-byte build checks pass. Existing non-blocking
+  Promise callback warnings and clipboard/legacy-settings recommendations remain; report copy
+  only writes to the clipboard after a user click, and the legacy fallback supports Obsidian 1.11.4.
 - Physical iOS/Android device testing remains unverified. Vite emits a non-blocking warning about
   future native config loading; current tests pass.
 
